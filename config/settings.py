@@ -68,7 +68,7 @@ OPEN_METEO = {
                 "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m",
                 "visibility", "cloud_cover", "cloud_cover_low",
                 "weather_code", "precipitation", "snowfall",
-            ],
+            ] + [f"wind_{v}_{p}hPa" for p in (925, 850) for v in ("speed", "direction")],   # за статистиката на вятъра
         },
         "gfs": {
             "model": "gfs_seamless",
@@ -78,7 +78,8 @@ OPEN_METEO = {
                 "cloud_cover_low", "weather_code", "precipitation",
                 "freezing_level_height",
             ] + [f"{v}_{p}hPa" for p in (1000, 950, 925, 900, 850, 800, 700)
-                 for v in ("temperature", "relative_humidity", "geopotential_height")],
+                 for v in ("temperature", "relative_humidity", "geopotential_height")]
+              + [f"wind_{v}_{p}hPa" for p in (925, 850) for v in ("speed", "direction")],
         },
     },
 }
