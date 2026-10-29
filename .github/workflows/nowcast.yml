@@ -1,0 +1,95 @@
+# Таблица на всеки 30 мин. Пуска се от cron-job.org (workflow_dispatch);
+# вграденият cron е само резерва — GitHub често го забавя.
+name: nowcast
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */2 * * *"     # резерва, ако cron-job.org спре
+
+permissions:
+  contents: write      # commit в клона archive
+  pages: write
+  id-token: write
+
+concurrency:
+  group: nowcast
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Пакети
+        run: pip install -r requirements.txt
+
+      # ICON: точките на всеки прогон (JSON, ~100 KB). Пази се последният кеш;
+      # нов прогон се тегли само когато DWD го е пуснал.
+      - name: ICON кеш (възстановяване)
+        uses: actions/cache/restore@v4
+        with:
+          path: cache/icon
+          key: icon-${{ github.run_id }}
+          restore-keys: icon-
+
+      - name: Данни
+        run: python run_fetch.py
+
+      - name: Таблица
+        run: python run_table.py
+
+      - name: HTML
+        run: python render_html.py
+
+      - name: ICON кеш (чистене и запис)
+        if: always()
+        run: find cache/icon -name 'icon_*.json' -mtime +2 -delete || true
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: cache/icon
+          key: icon-${{ github.run_id }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: output
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+      # Архив: входни данни + таблица от това пускане и ICON прогона (веднъж)
+      - name: Архив в клона archive
+        if: always()
+        run: |
+          git config user.name  "airport-nowcast bot"
+          git config user.email "actions@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin archive >/dev/null; then
+            git clone --depth 1 --branch archive \
+              "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" arch
+          else
+            mkdir arch && cd arch && git init -b archive && \
+            git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" && cd ..
+          fi
+          cp -r archive/. arch/ 2>/dev/null || true
+          mkdir -p arch/icon
+          for f in cache/icon/icon_*.json; do
+            [ -f "$f" ] || continue
+            b=$(basename "$f").gz
+            [ -f "arch/icon/$b" ] || gzip -c "$f" > "arch/icon/$b"
+          done
+          cd arch
+          git config user.name  "airport-nowcast bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -q -m "архив $(date -u +%Y-%m-%dT%H:%MZ)" || { echo "няма нищо ново"; exit 0; }
+          for i in 1 2 3; do git push -q origin archive && break; git pull -q --rebase origin archive; done

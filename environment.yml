@@ -1,0 +1,10 @@
+name: airport-nowcast
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy
+  - requests
+  - xarray
+  - cfgrib
+  - eccodes
