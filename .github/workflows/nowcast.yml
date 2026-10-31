@@ -87,6 +87,13 @@ jobs:
             b=$(basename "$f").gz
             [ -f "arch/icon/$b" ] || gzip -c "$f" > "arch/icon/$b"
           done
+          # ALADIN: веднъж на run (само архив, не влиза в таблицата)
+          mkdir -p arch/aladin
+          for f in cache/aladin/aladin_*.json; do
+            [ -f "$f" ] || continue
+            b=$(basename "$f").gz
+            [ -f "arch/aladin/$b" ] || gzip -c "$f" > "arch/aladin/$b"
+          done
           cd arch
           git config user.name  "airport-nowcast bot"
           git config user.email "actions@users.noreply.github.com"

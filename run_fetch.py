@@ -14,13 +14,14 @@ import datetime as dt
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config.settings import (AIRPORTS, ICAO_LIST, HORIZON_H, METAR, OPEN_METEO, NOWCAST,
-                             ICON_DWD, ICON_CELLS_FILE, CACHE_DIR, ARCHIVE_DIR)
+                             ICON_DWD, ICON_CELLS_FILE, CACHE_DIR, ARCHIVE_DIR, ALADIN)
 from src.fetch.nowcast import fetch_airports_json
 from src.fetch.fog import fetch_fog_json
 from config.settings import FOG
 from src.fetch.metar import fetch_metars, is_stale
 from src.fetch.openmeteo import fetch_model, nb_coords, fetch_neighbourhood
 from src.fetch.icon_dwd import fetch_icon
+from src.fetch.aladin import fetch_aladin
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s",
                     datefmt="%H:%M:%S")
@@ -75,6 +76,14 @@ def main():
     except Exception as e:
         log.error(f"IFS околност: {e}")
         inputs["errors"]["ifs_nb"] = str(e)
+
+    # ALADIN — само архив (не влиза в таблицата)
+    try:
+        path, run, new = fetch_aladin(now, AIRPORTS, ALADIN, OPEN_METEO, CACHE_DIR)
+        inputs["aladin"] = {"file": os.path.relpath(path, CACHE_DIR), "run": run, "new": new}
+    except Exception as e:
+        log.error(f"ALADIN: {e}")
+        inputs["errors"]["aladin"] = str(e)
 
     if not args.no_icon:
         try:
@@ -144,6 +153,9 @@ def summary(inputs, now):
     if "icon" in inputs:
         i = inputs["icon"]
         print(f"\nICON-EU run {i['run'][:16]}, файл {i['file']}, неуспешни файлове: {i['failed_files']}")
+    if "aladin" in inputs:
+        a = inputs["aladin"]
+        print(f"\nALADIN run {a['run'][:16]}, файл {a['file']}{' (нов)' if a['new'] else ''}")
     if inputs["errors"]:
         print("\nГРЕШКИ:", json.dumps(inputs["errors"], ensure_ascii=False, indent=1))
 

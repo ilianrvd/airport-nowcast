@@ -85,6 +85,26 @@ OPEN_METEO = {
 }
 
 # ------------------------------------------------------------
+# ALADIN (CHMI, Central Europe 2.3 km) — само архив за сравнение с ICON.
+# Не влиза в таблицата. Run на 6 ч; записва се веднъж на run, 72 ч напред.
+# ------------------------------------------------------------
+ALADIN = {
+    "model": "chmi_aladin_central_europe_2km",
+    "meta_url": "https://api.open-meteo.com/data/chmi_aladin_central_europe_2km/static/meta.json",
+    "run_every_h": 6,
+    "forecast_hours": 72,
+    "cell_selection": "land",      # за LBWN: клетка на суша
+    "hourly": [
+        "temperature_2m", "dew_point_2m", "relative_humidity_2m",
+        "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m",
+        "visibility", "cloud_cover", "cloud_cover_low",
+        "precipitation", "rain", "snowfall", "showers", "cape", "weather_code",
+    ] + [f"{v}_{p}hPa" for p in (1000, 950, 925, 850, 800, 700, 600)
+         for v in ("temperature", "relative_humidity", "geopotential_height")]
+      + [f"wind_{v}_{p}hPa" for p in (925, 850, 700) for v in ("speed", "direction")],
+}
+
+# ------------------------------------------------------------
 # ICON-EU — DWD Open Data (GRIB2)
 # ------------------------------------------------------------
 ICON_DWD = {
