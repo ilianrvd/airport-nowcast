@@ -58,11 +58,14 @@ FOG = {
 # ------------------------------------------------------------
 OPEN_METEO = {
     "url": "https://api.open-meteo.com/v1/forecast",
+    "meta_url": "https://api.open-meteo.com/data/{domain}/static/meta.json",
     "past_hours": 3,
     "forecast_hours": HORIZON_H + 2,
     "models": {
         "ifs": {
             "model": "ecmwf_ifs",
+            # прогонът (за водещото време от run-а) — първият отговорил meta.json
+            "meta": ["ecmwf_ifs", "ecmwf_ifs025"],
             "hourly": [
                 "temperature_2m", "dew_point_2m", "relative_humidity_2m",
                 "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m",
@@ -72,6 +75,7 @@ OPEN_METEO = {
         },
         "gfs": {
             "model": "gfs_seamless",
+            "meta": ["ncep_gfs013", "ncep_gfs025"],     # seamless = GFS 0.11° (+HRRR в САЩ)
             "hourly": [
                 "temperature_2m", "dew_point_2m",
                 "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m",

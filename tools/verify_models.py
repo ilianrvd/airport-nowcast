@@ -30,11 +30,13 @@
   (при най-късото водещо време), плюс брой различни дни.
   С --hourly: bias на вятъра и T по час на денонощието (за B_stat).
 
-Употреба (архивът е разархивиран или е git worktree на клона archive):
-  git worktree add ../archive archive
-  python tools/verify_models.py ../archive
-  python tools/verify_models.py ../archive --from 2026-11-01 --to 2026-11-14 --icao LBSF
-  python tools/verify_models.py ../archive --hourly --csv rows.csv.gz
+Употреба (архивът е на месечни клонове archive-YYYY-MM; всеки — git worktree):
+  git fetch origin archive-2026-11 archive-2026-12
+  git worktree add ../arch-2026-11 archive-2026-11
+  git worktree add ../arch-2026-12 archive-2026-12
+  python tools/verify_models.py ../arch-2026-11
+  python tools/verify_models.py ../arch-2026-11 ../arch-2026-12 --from 2026-11-20 --to 2026-12-10
+  python tools/verify_models.py ../arch-2026-11 --icao LBSF --hourly --csv rows.csv.gz
 """
 
 import os, sys, csv, glob, gzip, json, argparse, math
@@ -127,18 +129,20 @@ def collect_metars(inputs):
 class ModelStore:
     """Серии по модел и run, с кеш; ICON и ALADIN се четат от файловете на run-а."""
 
-    def __init__(self, root):
-        self.root = root
+    def __init__(self, roots):
+        self.roots = roots if isinstance(roots, (list, tuple)) else [roots]
         self.cache = {}
 
     def _run_file(self, sub, ref):
+        """Файлът на run-а — от който и да е месец (прогон от края на месеца е и в следващия)."""
         if not ref:
             return None
         base = os.path.basename(ref["file"]).replace(".json", "")
-        path = os.path.join(self.root, sub, base + ".json.gz")
-        if path not in self.cache:
-            self.cache[path] = load_gz(path) if os.path.exists(path) else None
-        return self.cache[path]
+        if base not in self.cache:
+            paths = [os.path.join(r, sub, base + ".json.gz") for r in self.roots]
+            path = next((p for p in paths if os.path.exists(p)), None)
+            self.cache[base] = load_gz(path) if path else None
+        return self.cache[base]
 
     def series(self, inp, icao):
         out = {}
@@ -366,7 +370,7 @@ def hourly_report(acc, models, icaos):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("archive", help="папка с разархивирания клон archive")
+    ap.add_argument("archive", nargs="+", help="папка(и) с месечните клонове archive-YYYY-MM")
     ap.add_argument("--from", dest="d0", default=None, help="YYYY-MM-DD")
     ap.add_argument("--to", dest="d1", default=None, help="YYYY-MM-DD (включително)")
     ap.add_argument("--icao", default=None)
@@ -374,7 +378,11 @@ def main():
     ap.add_argument("--csv", default=None, help="всички сравнения ред по ред (.csv или .csv.gz)")
     args = ap.parse_args()
 
-    files = sorted(glob.glob(os.path.join(args.archive, "20??", "??", "??", "[0-9][0-9][0-9][0-9].json.gz")))
+    uniq = {}                             # един файл веднъж, дори да е в два клона
+    for a in args.archive:
+        for p in glob.glob(os.path.join(a, "20??", "??", "??", "[0-9][0-9][0-9][0-9].json.gz")):
+            uniq.setdefault(tuple(p.replace("\\", "/").split("/")[-4:]), p)
+    files = [uniq[k] for k in sorted(uniq)]
     def day(p):
         parts = p.replace("\\", "/").split("/")
         return "-".join(parts[-4:-1])

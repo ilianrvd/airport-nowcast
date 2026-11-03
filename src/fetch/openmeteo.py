@@ -5,8 +5,10 @@ IFS HRES 9 km и GFS от Open-Meteo — точкови почасови дан�
 непозната променлива, всяка променлива се проверява поотделно веднъж и
 валидният списък се пази в cache/om_vars_<модел>.json.
 
-Резултат: {"model", "fetched", "times": [ISO UTC], "airports": {icao: {var: [..]}},
+Резултат: {"model", "fetched", "run", "run_src", "times": [ISO UTC], "airports": {icao: {var: [..]}},
            "dropped": [променливи, които моделът не дава]}
+"run" — началото на прогона (ISO UTC) от meta.json на Open-Meteo (за водещото време
+от run-а при настройката на мултимоделния подход); None, ако meta не отговори.
 Вятър в kt, височини в m, видимост в m.
 """
 
@@ -33,6 +35,24 @@ def _request(url, lats, lons, model, hourly, past_h, fc_h, timeout=60):
     }
     return requests.get(url, params=params, timeout=timeout,
                         headers={"User-Agent": "airport-nowcast/0.1"})
+
+
+def model_run(cfg, om, timeout=15):
+    """(начало на прогона ISO UTC, домейн) от meta.json — първият отговорил кандидат."""
+    for domain in cfg.get("meta", []):
+        try:
+            r = requests.get(om["meta_url"].format(domain=domain), timeout=timeout,
+                             headers={"User-Agent": "airport-nowcast/0.1"})
+            if r.status_code != 200:
+                continue
+            t = r.json().get("last_run_initialisation_time")
+            if t:
+                return dt.datetime.fromtimestamp(int(t), tz=dt.timezone.utc).isoformat(), domain
+        except (requests.RequestException, ValueError) as e:
+            logger.debug(f"meta {domain}: {e}")
+    if cfg.get("meta"):
+        logger.warning(f"{cfg['model']}: прогонът не е намерен (meta: {', '.join(cfg['meta'])})")
+    return None, None
 
 
 def _valid_vars(url, lat, lon, model, wanted, cache_dir):
@@ -122,7 +142,11 @@ def fetch_model(key, cfg, airports, om, cache_dir):
 
     times = [dt.datetime.fromtimestamp(t, tz=dt.timezone.utc).isoformat()
              for t in data[0]["hourly"]["time"]]
+    run, run_src = model_run(cfg, om)
+    if run:
+        logger.info(f"{model}: прогон {run[:16]}Z (meta: {run_src})")
     out = {"model": model, "fetched": dt.datetime.now(dt.timezone.utc).isoformat(),
+           "run": run, "run_src": run_src,
            "times": times, "airports": {},
            "dropped": sorted(set(wanted) - set(hourly_vars))}
     for icao, d in zip(icaos, data):

@@ -31,8 +31,11 @@ python run_fetch.py
 - `main` — само код. `cache/`, `archive/`, `output/` не се качват.
 - `.github/workflows/nowcast.yml` — пуска се от cron-job.org в :12 и :42 (workflow_dispatch),
   резервен вграден cron на всеки 2 ч. Тегли данните, смята таблицата, публикува
-  `output/` в Pages (без commit) и добавя архива в клона `archive`.
+  `output/` в Pages (без commit) и добавя архива в клона на месеца `archive-YYYY-MM`.
 - ICON точките се пазят между пусканията с `actions/cache`; нов прогон се тегли само при нужда.
-- Клон `archive`: `YYYY/MM/DD/HHMM.json.gz` (входни), `table_HHMM.json.gz`, `icon/icon_YYYYMMDDHH.json.gz`.
+- Клонове `archive-YYYY-MM` (по един на месец; `archive-2026-11` започва от 29.10, старият клон `archive` е до 03.11):
+  `YYYY/MM/DD/HHMM.json.gz` (входни; IFS и GFS с `run` — началото на прогона), `table_HHMM.json.gz`,
+  `icon/icon_YYYYMMDDHH.json.gz`, `aladin/aladin_YYYYMMDDHH.json.gz`. Пускането клонира само текущия месец.
+- Сравнение с METAR: `tools/verify_models.py ../arch-2026-11 [../arch-2026-12 …]` (git worktree на всеки месец).
 
 Настройка: Settings → Pages → Source: **GitHub Actions**.

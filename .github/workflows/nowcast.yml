@@ -67,17 +67,21 @@ jobs:
       - id: deploy
         uses: actions/deploy-pages@v4
 
-      # Архив: входни данни + таблица от това пускане и ICON прогона (веднъж)
-      - name: Архив в клона archive
+      # Архив: входни данни + таблица от това пускане и ICON прогона (веднъж).
+      # Клон на месец (archive-YYYY-MM): всяко пускане клонира само текущия месец
+      # (до ~45 MB), а не целия натрупан архив. Месецът е самостоятелен — ICON/ALADIN
+      # прогоните, нужни за него, се копират от кеша и в новия клон.
+      - name: Архив в клона archive-YYYY-MM
         if: always()
         run: |
+          BR="archive-$(date -u +%Y-%m)"
           git config user.name  "airport-nowcast bot"
           git config user.email "actions@users.noreply.github.com"
-          if git ls-remote --exit-code --heads origin archive >/dev/null; then
-            git clone --depth 1 --branch archive \
+          if git ls-remote --exit-code --heads origin "$BR" >/dev/null; then
+            git clone --depth 1 --branch "$BR" \
               "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" arch
           else
-            mkdir arch && cd arch && git init -b archive && \
+            mkdir arch && cd arch && git init -b "$BR" && \
             git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" && cd ..
           fi
           cp -r archive/. arch/ 2>/dev/null || true
@@ -99,4 +103,4 @@ jobs:
           git config user.email "actions@users.noreply.github.com"
           git add -A
           git commit -q -m "архив $(date -u +%Y-%m-%dT%H:%MZ)" || { echo "няма нищо ново"; exit 0; }
-          for i in 1 2 3; do git push -q origin archive && break; git pull -q --rebase origin archive; done
+          for i in 1 2 3; do git push -q origin "$BR" && break; git pull -q --rebase origin "$BR"; done
