@@ -16,6 +16,7 @@ METAR от AWC Data API + собствен парсер на суровия те
 """
 
 import re
+import time
 import logging
 import datetime as dt
 
@@ -131,8 +132,26 @@ def parse_metar(raw: str) -> dict:
     return out
 
 
-def fetch_metars(icaos, url, hours=3, timeout=30):
-    """Последните METAR/SPECI за списък летища → {icao: [parsed, …]} (най-новият първи)."""
+def fetch_metars(icaos, url, hours=3, timeout=30, retry_wait=10):
+    """Последните METAR/SPECI за списък летища → {icao: [parsed, …]} (най-новият първи).
+    Ако AWC не върне нищо за някое летище, още една заявка само за него след retry_wait s."""
+    out = _fetch_once(icaos, url, hours, timeout)
+    empty = [ic for ic in icaos if not out[ic]]
+    if empty and retry_wait:
+        time.sleep(retry_wait)
+        try:
+            again = _fetch_once(empty, url, hours, timeout)
+            for ic in empty:
+                out[ic] = again[ic]
+        except requests.RequestException as e:
+            logger.warning(f"повторна заявка за {', '.join(empty)}: {e}")
+    for ic in out:
+        if not out[ic]:
+            logger.warning(f"{ic}: няма METAR за последните {hours} ч")
+    return out
+
+
+def _fetch_once(icaos, url, hours, timeout):
     params = {"ids": ",".join(icaos), "format": "json", "hours": hours}
     r = requests.get(url, params=params, timeout=timeout,
                      headers={"User-Agent": "airport-nowcast/0.1"})
@@ -154,8 +173,6 @@ def fetch_metars(icaos, url, hours=3, timeout=30):
     for ic in out:
         out[ic].sort(key=lambda p: p["time"] or dt.datetime.min.replace(tzinfo=dt.timezone.utc),
                      reverse=True)
-        if not out[ic]:
-            logger.warning(f"{ic}: няма METAR за последните {hours} ч")
     return out
 
 

@@ -20,7 +20,9 @@ import requests
 logger = logging.getLogger("fetch.openmeteo")
 
 
-def _request(url, lats, lons, model, hourly, past_h, fc_h, timeout=60):
+def _request(url, lats, lons, model, hourly, past_h, fc_h, timeout=60, cell="land"):
+    """cell: "land" за точките на летищата (суша с близка височина, по подразбиране
+    в Open-Meteo); "nearest" за околността, за да съвпада с решетката на ICON."""
     params = {
         "latitude": ",".join(f"{x:.4f}" for x in lats),
         "longitude": ",".join(f"{x:.4f}" for x in lons),
@@ -31,7 +33,7 @@ def _request(url, lats, lons, model, hourly, past_h, fc_h, timeout=60):
         "wind_speed_unit": "kn",
         "timezone": "GMT",
         "timeformat": "unixtime",
-        "cell_selection": "nearest",
+        "cell_selection": cell,
     }
     return requests.get(url, params=params, timeout=timeout,
                         headers={"User-Agent": "airport-nowcast/0.1"})
@@ -100,7 +102,7 @@ def fetch_neighbourhood(model, coords, variables, om, timeout=90):
     Резултат: {"model", "times", "airports": {icao: {"lat", "lon", var: [[по точки] по време]}}}"""
     flat = [(icao, la, lo) for icao, pts in coords.items() for la, lo in pts]
     r = _request(om["url"], [p[1] for p in flat], [p[2] for p in flat], model, variables,
-                 om["past_hours"], om["forecast_hours"], timeout=timeout)
+                 om["past_hours"], om["forecast_hours"], timeout=timeout, cell="nearest")
     r.raise_for_status()
     data = r.json()
     if isinstance(data, dict):
