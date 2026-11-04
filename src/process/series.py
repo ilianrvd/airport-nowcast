@@ -102,8 +102,11 @@ def _nb_icon(nb):
     """Околността на ICON: {"hsurf", "fr_land" (по клетки), "vis", "ceiling" (време × клетки)}."""
     if not nb or not nb.get("vis"):
         return None
+    ncell = len(nb.get("hsurf") or [])
     def mat(x):
-        return np.array([[np.nan if v is None else v for v in (row or [])] for row in x], dtype=float)
+        # стъпка с несвален файл → ред от NaN със същата дължина
+        return np.array([[np.nan if v is None else v for v in row] if row else [np.nan] * ncell
+                         for row in x], dtype=float).reshape(len(x), ncell)
     return {"hsurf": _arr(nb["hsurf"]), "fr_land": _arr(nb["fr_land"]),
             "vis": mat(nb["vis"]), "ceiling": mat(nb.get("ceiling") or [])}
 
