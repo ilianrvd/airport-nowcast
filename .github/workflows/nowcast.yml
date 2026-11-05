@@ -67,6 +67,29 @@ jobs:
       - id: deploy
         uses: actions/deploy-pages@v4
 
+      # Диагностика (не проваля пускането): дали публикуваната страница е тази от
+      # това пускане. Сравнява основния адрес (кеширан) с адреса с ?t= (заобикаля кеша).
+      # Основен адрес по-стар от ?t= → кеш; и двата стари → публикуването не е влязло.
+      - name: Проверка на публикуването
+        if: steps.deploy.outcome == 'success'
+        continue-on-error: true
+        run: |
+          sleep 40
+          URL="${{ steps.deploy.outputs.page_url }}"
+          gen() { grep -o 'window.GEN=[0-9]*' | head -1 | cut -d= -f2; }
+          want=$(gen < output/index.html)
+          plain=$(curl -sS --max-time 20 "$URL" | gen || true)
+          bust=$(curl -sS --max-time 20 "${URL}?t=$(date +%s)" | gen || true)
+          age() { [ -n "$1" ] && echo "$(( (want - $1) / 60000 )) мин по-стара" || echo "няма"; }
+          echo "очаквана:        $want"
+          echo "основен адрес:   ${plain:-—}  ($(age "$plain"))"
+          echo "адрес с ?t=:     ${bust:-—}  ($(age "$bust"))"
+          if [ "$plain" != "$want" ] && [ "$bust" = "$want" ]; then
+            echo "::warning::Страницата на основния адрес е стара (кеш), а с ?t= е актуална"
+          elif [ "$bust" != "$want" ]; then
+            echo "::warning::Публикуваната страница не е тази от пускането (основен: ${plain:-няма}, ?t=: ${bust:-няма})"
+          fi
+
       # Архив: входни данни + таблица от това пускане и ICON прогона (веднъж).
       # Клон на месец (archive-YYYY-MM): всяко пускане клонира само текущия месец
       # (до ~45 MB), а не целия натрупан архив. Месецът е самостоятелен — ICON/ALADIN
