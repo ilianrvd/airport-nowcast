@@ -262,6 +262,15 @@ thead th.now{background:#EEF1F5}
 footer{font-size:12px;color:var(--mut);line-height:1.6}
 """
 
+# Презареждане с ?t=… (заобикаля кеша на браузъра и на Pages): когато страницата е
+# по-стара от 12 мин — проверка всяка минута и при връщане към раздела; не по-често от 5 мин.
+RELOAD_JS = """(function(){var G=window.GEN||Date.now();
+function chk(){try{if(document.visibilityState!=='visible')return;
+if(Date.now()-G<12*60000)return;
+var L=+sessionStorage.getItem('lr')||0;if(Date.now()-L<300000)return;
+sessionStorage.setItem('lr',Date.now());location.replace(location.pathname+'?t='+Date.now())}catch(e){}}
+setInterval(chk,60000);document.addEventListener('visibilitychange',chk);chk()})();"""
+
 JS = """
 const tabs=[...document.querySelectorAll('nav button')];
 function show(id){tabs.forEach(b=>b.setAttribute('aria-selected',b.dataset.id===id));
@@ -292,7 +301,7 @@ def main():
 
     page = f"""<!doctype html>
 <html lang="bg"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="refresh" content="600">
+<noscript><meta http-equiv="refresh" content="600"></noscript>
 <title>Летищен nowcasting</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -311,7 +320,7 @@ def main():
 </section>
 <footer>Експериментален продукт за обучение и проучване. Не е TAF и не замества официалните прогнози.
 Източници: METAR (aviationweather.gov), ICON-EU (DWD), ECMWF IFS и GFS (Open-Meteo), nowcasting-public, модел за мъгла.</footer>
-</main><script>{JS}</script></body></html>"""
+</main><script>window.GEN={int(now.timestamp() * 1000)};</script><script>{JS}</script><script>{RELOAD_JS}</script></body></html>"""
     out = os.path.join(S.OUTPUT_DIR, "index.html")
     with open(out, "w", encoding="utf-8") as f:
         f.write(page)
