@@ -132,29 +132,48 @@ def parse_metar(raw: str) -> dict:
     return out
 
 
-def fetch_metars(icaos, url, hours=3, timeout=30, retry_wait=10):
+def fetch_metars(icaos, url, hours=3, timeout=30, retry_wait=10, late_min=40):
     """Последните METAR/SPECI за списък летища → {icao: [parsed, …]} (най-новият първи).
-    Ако AWC не върне нищо за някое летище, още една заявка само за него след retry_wait s."""
+
+    Втори опит (след retry_wait s, само за засегнатите летища), когато AWC не върне нищо
+    или най-новият METAR е по-стар от late_min минути. METAR-ите са на 30 мин, така че
+    при пускане в :12/:42 най-новият е на ~12 мин; по-стар отговор е непълен или
+    кеширан. Вторият опит е с hours + 1 (различен URL → заобикаля кеширан отговор) и
+    със заглавия no-cache; взима се само ако е по-нов от първия."""
     out = _fetch_once(icaos, url, hours, timeout)
-    empty = [ic for ic in icaos if not out[ic]]
-    if empty and retry_wait:
+    now = dt.datetime.now(dt.timezone.utc)
+
+    def newest(ic):
+        return out[ic][0]["time"] if out[ic] and out[ic][0].get("time") else None
+
+    late = [ic for ic in icaos
+            if newest(ic) is None or (now - newest(ic)).total_seconds() > late_min * 60]
+    if late and retry_wait:
+        why = ", ".join(f"{ic} ({'няма' if newest(ic) is None else str(int((now - newest(ic)).total_seconds() // 60)) + ' мин'})"
+                        for ic in late)
+        logger.info(f"METAR: непълен или стар отговор за {why} — повторна заявка")
         time.sleep(retry_wait)
         try:
-            again = _fetch_once(empty, url, hours, timeout)
-            for ic in empty:
-                out[ic] = again[ic]
+            again = _fetch_once(late, url, hours + 1, timeout, no_cache=True)
+            for ic in late:
+                old, new = newest(ic), (again[ic][0]["time"] if again[ic] and again[ic][0].get("time") else None)
+                if new is not None and (old is None or new > old):
+                    out[ic] = again[ic]
+                    logger.info(f"METAR {ic}: повторната заявка даде по-нов ({new:%H:%MZ})")
         except requests.RequestException as e:
-            logger.warning(f"повторна заявка за {', '.join(empty)}: {e}")
+            logger.warning(f"повторна заявка за {', '.join(late)}: {e}")
     for ic in out:
         if not out[ic]:
             logger.warning(f"{ic}: няма METAR за последните {hours} ч")
     return out
 
 
-def _fetch_once(icaos, url, hours, timeout):
+def _fetch_once(icaos, url, hours, timeout, no_cache=False):
     params = {"ids": ",".join(icaos), "format": "json", "hours": hours}
-    r = requests.get(url, params=params, timeout=timeout,
-                     headers={"User-Agent": "airport-nowcast/0.1"})
+    headers = {"User-Agent": "airport-nowcast/0.1"}
+    if no_cache:
+        headers.update({"Cache-Control": "no-cache", "Pragma": "no-cache"})
+    r = requests.get(url, params=params, timeout=timeout, headers=headers)
     r.raise_for_status()
     data = r.json() if r.content else []
     out = {ic: [] for ic in icaos}
