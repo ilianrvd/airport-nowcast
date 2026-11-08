@@ -85,6 +85,46 @@ def fetch_aladin(now, airports, cfg, om, cache_dir):
             "empty": [v for v, a in vals.items() if not a or all(x is None for x in a)],
             **vals,
         }
+    try:
+        res["nb"] = _fetch_nb(airports, cfg, om)
+    except Exception as e:                      # околността е допълнение — не губим основния файл
+        logger.warning(f"ALADIN околност: {e}")
+        res["nb"] = None
     with open(path, "w", encoding="utf-8") as f:
         json.dump(res, f, ensure_ascii=False)
     return path, run.isoformat(), True
+
+
+def _fetch_nb(airports, cfg, om):
+    """Околност (2R+1)² около всяко летище; една заявка. Резултат като при ICON/IFS:
+    {"vars": [...], "airports": {icao: {"lat": [...], "lon": [...], var: [[по точки] по време]}}}"""
+    nb = cfg.get("nb")
+    if not nb:
+        return None
+    R, dla, dlo, vars_ = nb["radius"], nb["step_lat"], nb["step_lon"], nb["hourly"]
+    flat = [(icao, round(a["lat"] + i * dla, 4), round(a["lon"] + j * dlo, 4))
+            for icao, a in airports.items() for i in range(-R, R + 1) for j in range(-R, R + 1)]
+    r = requests.get(om["url"], timeout=90, headers={"User-Agent": "airport-nowcast/0.1"}, params={
+        "latitude": ",".join(f"{p[1]:.4f}" for p in flat),
+        "longitude": ",".join(f"{p[2]:.4f}" for p in flat),
+        "models": cfg["model"], "hourly": ",".join(vars_),
+        "forecast_hours": cfg["forecast_hours"], "past_hours": 0,
+        "wind_speed_unit": "kn", "timezone": "GMT", "timeformat": "unixtime",
+        "cell_selection": "nearest"})
+    r.raise_for_status()
+    data = r.json()
+    if isinstance(data, dict):
+        data = [data]
+    out = {"vars": vars_, "airports": {}}
+    for (icao, la, lo), d in zip(flat, data):
+        a = out["airports"].setdefault(icao, {"lat": [], "lon": [], **{v: [] for v in vars_}})
+        a["lat"].append(d.get("latitude", la))
+        a["lon"].append(d.get("longitude", lo))
+        for v in vars_:
+            a[v].append((d.get("hourly") or {}).get(v))
+    for a in out["airports"].values():           # точки × време → време × точки
+        n = max((len(x) for v in vars_ for x in a[v] if x), default=0)
+        for v in vars_:
+            pts = a[v]
+            a[v] = [[(p[k] if p else None) for p in pts] for k in range(n)]
+    return out
