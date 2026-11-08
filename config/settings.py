@@ -81,6 +81,7 @@ OPEN_METEO = {
                 "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m",
                 "cloud_cover_low", "weather_code", "precipitation",
                 "freezing_level_height",
+                "categorical_freezing_rain",    # 0/1 — само в архива (флаг на модела за FZRA)
             ] + [f"{v}_{p}hPa" for p in (1000, 950, 925, 900, 850, 800, 700)
                  for v in ("temperature", "relative_humidity", "geopotential_height")]
               + [f"wind_{v}_{p}hPa" for p in (925, 850) for v in ("speed", "direction")],
