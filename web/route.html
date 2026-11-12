@@ -156,7 +156,7 @@ footer{grid-column:1/-1;font-size:12px;color:var(--mut);line-height:1.6}
   </section>
 
   <p class="note" data-t="note">Прогнозата по маршрут е експериментална и не замества официалните прогнози за полети на ниски нива (GAMET) и предполетната метеорологична консултация.</p>
-  <footer data-t="footer">Експериментален продукт за обучение и проучване. Карта: © OpenStreetMap contributors, OpenTopoMap, Esri. Модели: ICON-EU и ECMWF IFS през Open-Meteo (CC BY 4.0). Релеф: Open-Meteo Elevation API.</footer>
+  <footer data-t="footer">Експериментален продукт за обучение и проучване. Карта: © OpenStreetMap contributors, OpenTopoMap, Esri. Модел: ICON-EU (DWD) през Open-Meteo (CC BY 4.0). Релеф: Open-Meteo Elevation API.</footer>
 </main>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -190,17 +190,18 @@ const T = {
     wpAddLabel: "или координати: 42.70 23.40 · 4242N02324E", add: "Добави",
     calc: "Изчисли", remove: "Премахни", noWps: "Няма — права линия между летищата.",
     note: "Прогнозата по маршрут е експериментална и не замества официалните прогнози за полети на ниски нива (GAMET) и предполетната метеорологична консултация.",
-    footer: "Експериментален продукт за обучение и проучване. Карта: © OpenStreetMap contributors, OpenTopoMap, Esri. Модели: ICON-EU и ECMWF IFS през Open-Meteo (CC BY 4.0). Релеф: Open-Meteo Elevation API.",
+    footer: "Експериментален продукт за обучение и проучване. Карта: © OpenStreetMap contributors, OpenTopoMap, Esri. Модел: ICON-EU (DWD) през Open-Meteo (CC BY 4.0). Релеф: Open-Meteo Elevation API.",
     dist: "Разстояние", time: "Време на полета", legs: "Участъци", local: "местно",
     resTitle: "Прогноза по маршрута",
     xsTitle: "Разрез и елементи по маршрута", segTitle: "По участъци", rawTitle: "Данни по точки (за проверка)",
     ovTitle: "Обобщение", stRed: "НЕБЛАГОПРИЯТНО", stYel: "ВНИМАНИЕ", stGrn: "БЕЗ ОСОБЕНОСТИ",
     ovWind: "Среден вятър на нивото", ovComp: "попътен", ovHead: "насрещен", ovDrift: "Най-голям снос",
-    ovFzl: "Нулева изотерма (най-ниска)", ovAgl: "Най-малко над терена на нивото (±10 km)", terWarn: "под 1000 ft над терена",
+    ovFzl: "Нулева изотерма (най-ниска)", ovAgl: "Най-малък запас над релефа (±10 km)", terWarn: "под 1000 ft над релефа",
     ovCloud: "В облак", ovIce: "Обледяване", ovVis: "Видимост на земята", ovNone: "няма",
-    ovModels: "n/2 = в колко от моделите (ICON, IFS)", nmFrom: "km",
+    ovModels: "Модел: ICON-EU (DWD) през Open-Meteo.", yes: "да", no: "не", lgCloud: "облак",
+    aglExpl: "Запас над релефа: на колко ft е полетът над най-високата точка на релефа в ивица ±10 km от двете страни на пътя (само на крейсерското ниво). Под 1000 ft — жълто, под 500 ft — червено.", nmFrom: "km",
     rWind: "вятър", rComp: "попътен kt", rCloud: "в облак", rIce: "обледяване", rVisL: "вид. на нивото",
-    rVisS: "вид. на земята", rAgl: "над терена ft", rT: "T °C", lgRelief: "релеф (отделна скала)", relief: "релеф", tipWhere: "време, място", tipAlt: "височина",
+    rVisS: "вид. на земята", rAgl: "запас над релефа ft", rT: "T °C", lgRelief: "релеф (отделна скала)", relief: "релеф", tipWhere: "време, място", tipAlt: "височина",
     lgFlight: "полет: без особености / внимание / неблагоприятно",
     segPart: "участък", segClimb: "изкачване", segCruise: "ниво", segDesc: "снижение",
     lgTer: "релеф по пътя", lgTerC: "най-високо ±10 km", lgCloud2: "облак, 2 модела", lgCloud1: "облак, 1 модел",
@@ -234,17 +235,18 @@ const T = {
     wpAddLabel: "or coordinates: 42.70 23.40 · 4242N02324E", add: "Add",
     calc: "Calculate", remove: "Remove", noWps: "None — direct line between the airports.",
     note: "The route forecast is experimental and does not replace the official low-level forecasts (GAMET) or a pre-flight meteorological briefing.",
-    footer: "Experimental product for training and research. Map: © OpenStreetMap contributors, OpenTopoMap, Esri. Models: ICON-EU and ECMWF IFS via Open-Meteo (CC BY 4.0). Terrain: Open-Meteo Elevation API.",
+    footer: "Experimental product for training and research. Map: © OpenStreetMap contributors, OpenTopoMap, Esri. Model: ICON-EU (DWD) via Open-Meteo (CC BY 4.0). Terrain: Open-Meteo Elevation API.",
     dist: "Distance", time: "Flight time", legs: "Legs", local: "local",
     resTitle: "Route forecast",
     xsTitle: "Cross-section and elements along the route", segTitle: "By segment", rawTitle: "Data at the points (for checking)",
     ovTitle: "Summary", stRed: "ADVERSE", stYel: "CAUTION", stGrn: "NO SIGNIFICANT WEATHER",
     ovWind: "Mean wind at level", ovComp: "tailwind", ovHead: "headwind", ovDrift: "Largest drift",
-    ovFzl: "Freezing level (lowest)", ovAgl: "Lowest clearance at level (±10 km)", terWarn: "below 1000 ft above terrain",
+    ovFzl: "Freezing level (lowest)", ovAgl: "Lowest terrain clearance (±10 km)", terWarn: "below 1000 ft above terrain",
     ovCloud: "In cloud", ovIce: "Icing", ovVis: "Surface visibility", ovNone: "none",
-    ovModels: "n/2 = in how many models (ICON, IFS)", nmFrom: "km",
+    ovModels: "Model: ICON-EU (DWD) via Open-Meteo.", yes: "yes", no: "no", lgCloud: "cloud",
+    aglExpl: "Terrain clearance: how many ft the flight is above the highest terrain within a strip ±10 km either side of the track (cruise level only). Below 1000 ft — yellow, below 500 ft — red.", nmFrom: "km",
     rWind: "wind", rComp: "tailwind kt", rCloud: "in cloud", rIce: "icing", rVisL: "vis at level",
-    rVisS: "surface vis", rAgl: "above terrain ft", rT: "T °C", lgRelief: "terrain (own scale)", relief: "terrain", tipWhere: "time, position", tipAlt: "altitude",
+    rVisS: "surface vis", rAgl: "terrain clearance ft", rT: "T °C", lgRelief: "terrain (own scale)", relief: "terrain", tipWhere: "time, position", tipAlt: "altitude",
     lgFlight: "flight: no significant / caution / adverse",
     segPart: "segment", segClimb: "climb", segCruise: "level", segDesc: "descent",
     lgTer: "terrain on track", lgTerC: "highest ±10 km", lgCloud2: "cloud, 2 models", lgCloud1: "cloud, 1 model",
@@ -451,7 +453,9 @@ function pointAt(path, s) {
 // стойностите се интерполират между нивата в ln p и линейно във времето.
 const OM = "https://api.open-meteo.com/v1/forecast";
 const OM_ELEV = "https://api.open-meteo.com/v1/elevation";
-const MODELS = {icon: "icon_eu", ifs: "ecmwf_ifs"};
+// Само ICON-EU: на височина моделите се различават малко, а IFS през Open-Meteo
+// не дава влажност по нивата. Кой модел е по-добър — решава се от архива.
+const MODELS = {icon: "icon_eu"};
 const LEVELS = [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500, 400];
 // Само нужните променливи: Open-Meteo брои всяка точка × (брой променливи / 10)
 // и има лимит 600 на минута. Облакът на нивото е от RH (≥ 95%); височината на
@@ -684,7 +688,7 @@ async function computeFlight() {
 // разликата между тях е несигурност. Облак на нивото, обледяване и
 // видимост — съгласие: в колко от моделите с данни е изпълнено.
 // Теглата са начални и ще се калибрират от архива.
-const W = {icon: 0.5, ifs: 0.5};
+const W = {icon: 1};
 const VIS_SIDE_KM = 10;
 const CLOUD_CC = 50, CLOUD_RH = 95;        // в облак: облачност на нивото ≥ 50%, без нея RH ≥ 95%
 // Моделите дават RH спрямо вода. Под 0 °C облакът (лед) е наситен спрямо лед, при
@@ -865,7 +869,7 @@ function drawEnds(F, T) {
 function drawResults(F, endSevMax = 0) {
   const P = F.path, of = Math.max(...P.map(p => (p.el || {}).of || 0));
   const na = "<span class=na>—</span>";
-  const tagN = (n, crit) => n ? `<span class="tag ${n === of ? (crit ? "c-crit" : "c-warn") : "c-warn"}">${n}/${of}</span>` : "";
+  const tagN = (n, crit) => !n ? "" : of === 1 ? `<span class="tag c-crit">${t("yes")}</span>` : `<span class="tag ${n === of ? (crit ? "c-crit" : "c-warn") : "c-warn"}">${n}/${of}</span>`;
   const nmR = r => `${Math.round(r[0] * NM_KM)}–${Math.round(r[1] * NM_KM)} km (${hhmmUtc(r[3])}–${hhmmUtc(r[4])})`;
   const listR = (rs) => rs.length ? rs.map(r => `${tagN(r[2], true)} ${nmR(r)}`).join("<br>") : t("ovNone");
 
@@ -987,10 +991,10 @@ function drawChart(F) {
     for (const Lr of Object.values(lay)) {
       if (Lr.lo >= yMax) continue;
       const r = `<rect x="${(xa(i) - 2).toFixed(1)}" y="${Y(Lr.hi).toFixed(1)}" width="${(xb(i) - xa(i) + 4).toFixed(1)}" height="${(Y(Lr.lo) - Y(Lr.hi)).toFixed(1)}" rx="8"/>`;
-      if (Lr.n >= 2) cl2 += r; else cl1 += r;
+      if (Lr.n >= 2 || Object.keys(MODELS).length === 1) cl2 += r; else cl1 += r;
     }
   });
-  g += `<g clip-path="url(#c-sec)" fill="${C_CLOUD}"><g opacity=".22" filter="url(#f-cloud)">${cl1}</g><g opacity=".45" filter="url(#f-cloud)">${cl2}</g></g>`;
+  g += `<g clip-path="url(#c-sec)" fill="${C_CLOUD}"><g opacity=".22" filter="url(#f-cloud)">${cl1}</g><g opacity="${Object.keys(MODELS).length === 1 ? .32 : .45}" filter="url(#f-cloud)">${cl2}</g></g>`;
 
   // нулева изотерма с етикет-хапче
   const fzp = P.filter(p => p.el && fin(p.el.fzl) && p.el.fzl <= yMax).map(p => [X(km(p)), Y(p.el.fzl)]);
@@ -1091,7 +1095,7 @@ function drawChart(F) {
           }
         } else if (key === "rCloud" || key === "rIce") {
           const n = Math.max(...E.map(e => key === "rCloud" ? e.cloud : e.ice));
-          txt = n ? `${n}/${of}` : "—"; bg = n ? (n === of ? 2 : 1) : 0;
+          txt = n ? (of === 1 ? t("yes") : `${n}/${of}`) : "—"; bg = n ? (n === of ? 2 : 1) : 0;
         } else if (key === "rVisL") {
           const v = Math.min(Infinity, ...E.map(e => vmin(e.visLev)).filter(fin));
           txt = v === 0 ? t("inCloud") : Number.isFinite(v) ? String(v) : "✓";
@@ -1123,12 +1127,14 @@ function drawChart(F) {
   $("xs").innerHTML = `<div class="xs-box"><svg viewBox="0 0 ${Wd} ${Ht}" role="img" aria-label="${t("xsTitle")}">
     <style>text{font-feature-settings:"locl" 0}.ax{font:11px 'IBM Plex Mono',monospace;fill:#6B7280}.lab{font:500 12px 'IBM Plex Sans',sans-serif;fill:#374151}.val{font:500 11.5px 'IBM Plex Mono',monospace}text{font-family:'IBM Plex Mono',monospace;font-size:11px}</style>
     ${defs}${g}${strip}${hover}</svg><div class="xs-tip" id="xs-tip" hidden></div></div>`;
-  $("xs-leg").innerHTML = `<span><i style="background:${C_CLOUD};opacity:.45;border-radius:6px"></i>${t("lgCloud2")}</span>`
+  $("xs-leg").innerHTML = (of > 1 ? `<span><i style="background:${C_CLOUD};opacity:.45;border-radius:6px"></i>${t("lgCloud2")}</span>`
     + `<span><i style="background:${C_CLOUD};opacity:.22;border-radius:6px"></i>${t("lgCloud1")}</span>`
+    : `<span><i style="background:${C_CLOUD};opacity:.3;border-radius:6px"></i>${t("lgCloud")}</span>`)
     + `<span><i style="background:${C_ICE};opacity:.45;height:8px"></i>${t("lgIce")}</span>`
     + `<span><i class="ln" style="border-top-color:${C_FZL};border-top-style:dashed"></i>${t("lgFzl")}</span>`
     + `<span><i class="ln" style="border-top-color:${SEV_COL[0]};border-top-width:3px"></i><i class="ln" style="border-top-color:${SEV_COL[1]};border-top-width:3px"></i><i class="ln" style="border-top-color:${SEV_COL[2]};border-top-width:3px"></i>${t("lgFlight")}</span>`
-    + `<span><i style="background:linear-gradient(#CDBB9C,#EDE5D7)"></i>${t("lgRelief")}</span>`;
+    + `<span><i style="background:linear-gradient(#CDBB9C,#EDE5D7)"></i>${t("lgRelief")}</span>`
+    + `<p class="hint" style="flex-basis:100%;margin:2px 0 0">${t("aglExpl")}</p>`;
 
   // посочване: най-близката точка по x
   const svg = $("xs").querySelector("svg"), tip = $("xs-tip"), cross = $("xs-cross"), dot = $("xs-dot");
@@ -1147,8 +1153,9 @@ function drawChart(F) {
     if (fin(e.T)) add("T / ISA", `${e.T.toFixed(0)} °C / ${(e.isa >= 0 ? "+" : "−") + Math.abs(Math.round(e.isa))}`);
     const rh = Object.entries(p.m || {}).filter(([, m]) => m && fin(m.RH)).map(([k, m]) => `${k.toUpperCase()} ${Math.round(m.RH)}%`);
     if (rh.length) add("RH", rh.join(" · "));
-    add(t("rCloud"), e.of ? `${e.cloud || 0}/${e.of}` : "—");
-    add(t("rIce"), e.of ? `${e.ice || 0}/${e.of}` : "—");
+    const yn = n => !e.of ? "—" : e.of === 1 ? (n ? t("yes") : t("no")) : `${n || 0}/${e.of}`;
+    add(t("rCloud"), yn(e.cloud));
+    add(t("rIce"), yn(e.ice));
     const vs = vmin(e.visSfc);
     if (fin(vs)) add(t("rVisS"), `${Math.round(vs)} m`);
     if (fin(e.fzl)) add("0 °C", `${ftOf(e.fzl)} ft`);
