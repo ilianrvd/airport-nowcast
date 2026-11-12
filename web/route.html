@@ -195,7 +195,7 @@ const T = {
     xsTitle: "Вертикален разрез", segTitle: "По участъци", rawTitle: "Данни по точки (за проверка)",
     ovTitle: "Обобщение", stRed: "НЕБЛАГОПРИЯТНО", stYel: "ВНИМАНИЕ", stGrn: "БЕЗ ОСОБЕНОСТИ",
     ovWind: "Среден вятър на нивото", ovComp: "попътен", ovHead: "насрещен", ovDrift: "Най-голям снос",
-    ovFzl: "Нулева изотерма (най-ниска)", ovAgl: "Най-малко над терена на нивото",
+    ovFzl: "Нулева изотерма (най-ниска)", ovAgl: "Най-малко над терена на нивото (±10 km)", terWarn: "под 1000 ft над терена",
     ovCloud: "В облак", ovIce: "Обледяване", ovVis: "Видимост на земята", ovNone: "няма",
     ovModels: "n/2 = в колко от моделите (ICON, IFS)", nmFrom: "NM",
     segPart: "участък", segClimb: "изкачване", segCruise: "ниво", segDesc: "снижение",
@@ -236,7 +236,7 @@ const T = {
     xsTitle: "Vertical cross-section", segTitle: "By segment", rawTitle: "Data at the points (for checking)",
     ovTitle: "Summary", stRed: "ADVERSE", stYel: "CAUTION", stGrn: "NO SIGNIFICANT WEATHER",
     ovWind: "Mean wind at level", ovComp: "tailwind", ovHead: "headwind", ovDrift: "Largest drift",
-    ovFzl: "Freezing level (lowest)", ovAgl: "Lowest clearance at level",
+    ovFzl: "Freezing level (lowest)", ovAgl: "Lowest clearance at level (±10 km)", terWarn: "below 1000 ft above terrain",
     ovCloud: "In cloud", ovIce: "Icing", ovVis: "Surface visibility", ovNone: "none",
     ovModels: "n/2 = in how many models (ICON, IFS)", nmFrom: "NM",
     segPart: "segment", segClimb: "climb", segCruise: "level", segDesc: "descent",
@@ -748,8 +748,9 @@ const ftOf = h => r100(h).toLocaleString("en-US").replace(/,/g, " ");
 function sev(e, p) {
   if (!e || !e.of) return 0;
   const full = n => n && n === e.of;
-  if (full(e.cloud) || full(e.ice) || full(e.sfc1500) || (p.phase === "cruise" && fin(e.agl) && e.agl < 500)) return 2;
-  if (e.cloud || e.ice || e.sfc1500 || e.sfc5000 || (p.phase === "cruise" && fin(e.agl) && e.agl < 1000)) return 1;
+  // Само времето; терена се показва отделно (не е метеорологично условие)
+  if (full(e.cloud) || full(e.ice) || full(e.sfc1500)) return 2;
+  if (e.cloud || e.ice || e.sfc1500 || e.sfc5000) return 1;
   return 0;
 }
 // Диапазони по разстояние, където условието е изпълнено: [[s0, s1, max n]]
@@ -887,7 +888,10 @@ function drawResults(F, endSevMax = 0) {
     + `<li>${S.from} ${hhmmUtc(S.etd)} → ${S.to} <b>${hhmmUtc(F.eta)} UTC</b> · ${Math.floor(min / 60)}:${pad(Math.round(min % 60))} · FL${String(S.fl).padStart(3, "0")}</li>`
     + ovW
     + `<li>${t("ovFzl")}: <b>${fz.length ? ftOf(Math.min(...fz)) + " ft" : "—"}</b></li>`
-    + `<li>${t("ovAgl")}: <b>${agl.length ? ftOf(Math.min(...agl)) + " ft" : "—"}</b></li>`
+    + `<li>${t("ovAgl")}: <b>${agl.length ? ftOf(Math.min(...agl)) + " ft" : "—"}</b>`
+    + (() => { const rs = ranges(P, p => p.phase === "cruise" && p.el && fin(p.el.agl) && p.el.agl < 1000 ? 1 : 0);
+               return rs.length ? `<br><span class="tag c-crit">${t("terWarn")}</span> ${rs.map(nmR).join(", ")}` : ""; })()
+    + `</li>`
     + `<li>${t("ovCloud")}:<br>${listR(ranges(P, p => p.el && p.el.cloud))}</li>`
     + `<li>${t("ovIce")}:<br>${listR(ranges(P, p => p.el && p.el.ice))}</li>`
     + `<li>${t("ovVis")} &lt; 1500 m:<br>${listR(ranges(P, p => p.el && p.el.sfc1500))}</li>`
@@ -989,14 +993,24 @@ function drawSection(F) {
   if (F.terrain) {
     const tr = F.terrain.track.filter(x => fin(x.ft));
     ter = `<path d="M${X(0)},${Y(0)} ${tr.map(x => `L${X(x.s).toFixed(1)},${Y(x.ft).toFixed(1)}`).join(" ")} L${X(total)},${Y(0)} Z" fill="#B9A88F"/>`;
-    const byS = {};
-    F.terrain.corridor.forEach(x => { if (fin(x.ft)) byS[x.s.toFixed(3)] = Math.max(byS[x.s.toFixed(3)] ?? -1e9, x.ft); });
-    const cm = Object.entries(byS).map(([s, ft]) => [+s, ft]).sort((a, b) => a[0] - b[0]);
-    if (cm.length) ter += `<path d="${cm.map(([s, ft], i) => `${i ? "L" : "M"}${X(s).toFixed(1)},${Y(ft).toFixed(1)}`).join(" ")}" fill="none" stroke="#7A6A55" stroke-dasharray="4 3" stroke-width="1.2"/>`;
+    // най-високото в коридора — стъпала по участъците между точките
+    let d = "";
+    P.forEach((p, i) => {
+      if (!fin(p.terC)) return;
+      const a = X(i ? (P[i - 1].s + p.s) / 2 : p.s), b = X(i < P.length - 1 ? (P[i + 1].s + p.s) / 2 : p.s), y = Y(Math.min(p.terC, yMax)).toFixed(1);
+      d += `${d ? "L" : "M"}${a.toFixed(1)},${y} L${b.toFixed(1)},${y} `;
+    });
+    if (d) ter += `<path d="${d}" fill="none" stroke="#7A6A55" stroke-dasharray="4 3" stroke-width="1.2"/>`;
   }
   // нулева изотерма
-  const fz = P.filter(p => p.el && fin(p.el.fzl));
-  const fzl = fz.length ? `<path d="${fz.map((p, i) => `${i ? "L" : "M"}${X(p.s).toFixed(1)},${Y(Math.min(p.el.fzl, yMax)).toFixed(1)}`).join(" ")}" fill="none" stroke="#1F5FBF" stroke-width="1.5" stroke-dasharray="6 4"/>` : "";
+  // нулева изотерма — само където е в обхвата на графиката
+  let fd = "", prevIn = false;
+  P.forEach(p => {
+    const ok = p.el && fin(p.el.fzl) && p.el.fzl <= yMax;
+    if (ok) fd += `${prevIn ? "L" : "M"}${X(p.s).toFixed(1)},${Y(p.el.fzl).toFixed(1)} `;
+    prevIn = ok;
+  });
+  const fzl = fd ? `<path d="${fd}" fill="none" stroke="#1F5FBF" stroke-width="1.5" stroke-dasharray="6 4"/>` : "";
   // полет и обледяване по него
   const path = `<path d="${P.map((p, i) => `${i ? "L" : "M"}${X(p.s).toFixed(1)},${Y(p.alt).toFixed(1)}`).join(" ")}" fill="none" stroke="#121821" stroke-width="2.5"/>`;
   let ice = "";
