@@ -204,7 +204,7 @@ const T = {
     endsTitle: "Летищата", dep: "Излитане", arr: "Кацане", endWind: "вятър", endVis: "вид.", endCig: "таван",
     endHigh: "висок", endNoTable: "Летищната таблица не е достъпна", endOut: "извън хоризонта на таблицата (12 ч)",
     endStale: "таблицата е от", endLink: "Летищна таблица →", endCol: "срок",
-    loading: "Сваляне на данните…", failed: "Данните не можаха да се свалят",
+    loading: "Сваляне на данните…", limit: "лимитът на Open-Meteo за минута е изчерпан — опитай пак след минута", failed: "Данните не можаха да се свалят",
     runInfo: "Изчислено", noModel: "няма данни",
     thS: "NM", thT: "UTC", thPh: "фаза", thAlt: "ft", thTer: "терен ft", thTerC: "терен ±10 km",
     thAgl: "над терена ±10 km", thComp: "попътен kt", thDrift: "снос", thFzl: "0 °C ft",
@@ -245,7 +245,7 @@ const T = {
     endsTitle: "Airports", dep: "Departure", arr: "Destination", endWind: "wind", endVis: "vis", endCig: "ceiling",
     endHigh: "high", endNoTable: "The airport table is not available", endOut: "outside the table horizon (12 h)",
     endStale: "table from", endLink: "Airport table →", endCol: "column",
-    loading: "Downloading data…", failed: "Could not download the data",
+    loading: "Downloading data…", limit: "Open-Meteo per-minute limit reached — try again in a minute", failed: "Could not download the data",
     runInfo: "Calculated", noModel: "no data",
     thS: "NM", thT: "UTC", thPh: "phase", thAlt: "ft", thTer: "terrain ft", thTerC: "terrain ±10 km",
     thAgl: "above terrain ±10 km", thComp: "tailwind kt", thDrift: "drift", thFzl: "0 °C ft",
@@ -334,7 +334,7 @@ function fmtCoord([lat, lon]) {
 // Час на всяка точка: по путевата скорост GS = TAS + компонента на вятъра
 // по пътя. windAt(lat, lon, alt_ft, t) идва от етап 3; без него GS = TAS.
 const R_NM = 3440.065, NM_KM = 1.852, D2R = Math.PI / 180;
-const STEP_KM = 10;
+const STEP_KM = 15;   // моделите са 7–9 km; по-гъсто само харчи лимита на Open-Meteo
 const CLIMB_FPM = 500, DESC_FPM = 500, CLIMB_TAS = 0.8;
 
 function gcDist(a, b) {
@@ -446,11 +446,13 @@ const OM = "https://api.open-meteo.com/v1/forecast";
 const OM_ELEV = "https://api.open-meteo.com/v1/elevation";
 const MODELS = {icon: "icon_eu", ifs: "ecmwf_ifs"};
 const LEVELS = [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500, 400];
-const PL_VARS = ["temperature", "relative_humidity", "wind_speed", "wind_direction", "geopotential_height", "cloud_cover"];
-const SFC_VARS = ["temperature_2m", "dew_point_2m", "relative_humidity_2m", "wind_speed_10m", "wind_direction_10m",
-  "surface_pressure", "visibility", "cloud_cover", "cloud_cover_low", "precipitation", "snowfall",
-  "weather_code", "freezing_level_height", "cape"];
-const TERRAIN_STEP_KM = 2, CORRIDOR_KM = [5, 10], CORRIDOR_STEP_KM = 5;
+// Само нужните променливи: Open-Meteo брои всяка точка × (брой променливи / 10)
+// и има лимит 600 на минута. Облакът на нивото е от RH (≥ 95%); височината на
+// нивата за разреза — по ISA.
+const PL_VARS = ["temperature", "relative_humidity", "wind_speed", "wind_direction"];
+const SFC_VARS = ["temperature_2m", "relative_humidity_2m", "wind_speed_10m", "wind_direction_10m",
+  "surface_pressure", "visibility", "cloud_cover_low", "precipitation", "snowfall", "freezing_level_height"];
+const TERRAIN_STEP_KM = 3;
 
 const isaP = ft => 1013.25 * Math.pow(1 - 6.8756e-6 * ft, 5.2559);   // hPa
 const fin = x => typeof x === "number" && Number.isFinite(x);
@@ -462,6 +464,7 @@ const cache = new Map();
 async function getJson(url) {
   if (cache.has(url)) return cache.get(url);
   const r = await fetch(url);
+  if (r.status === 429) throw new Error(t("limit"));
   if (!r.ok) throw new Error(`${r.status} ${(await r.text()).slice(0, 160)}`);
   const j = await r.json();
   cache.set(url, j);
@@ -508,24 +511,17 @@ function destPoint([lat, lon], brg, km) {
 }
 // Терен: по пътя през 2 km и в коридор ±5/±10 km през 5 km.
 // Връща {track: [{s, ft}], corridor: [{s, ft}]} (s в NM).
+// Терен по пътя през 3 km (Elevation API). Коридорът ±10 km е от височините,
+// които Open-Meteo връща за точките встрани (заявката за видимост), без отделни заявки.
 async function fetchTerrain(path) {
   const total = path[path.length - 1].s;
-  const along = (stepKm) => {
-    const out = [];
-    for (let s = 0; s <= total + 1e-6; s += stepKm / NM_KM) {
-      const p = pointAtS(path, Math.min(s, total));
-      out.push({s: Math.min(s, total), lat: p.lat, lon: p.lon, trk: p.trk});
-    }
-    return out;
-  };
-  const tr = along(TERRAIN_STEP_KM), cr = along(CORRIDOR_STEP_KM);
-  const side = [];
-  cr.forEach(p => CORRIDOR_KM.forEach(km => [90, -90].forEach(a => side.push({s: p.s, c: destPoint([p.lat, p.lon], p.trk + a, km)}))));
-  const elev = await fetchElevation([...tr.map(p => [p.lat, p.lon]), ...side.map(p => p.c)]);
-  const ft = m => fin(m) ? m / 0.3048 : NaN;
-  const track = tr.map((p, i) => ({s: p.s, ft: ft(elev[i])}));
-  const corridor = side.map((p, i) => ({s: p.s, ft: ft(elev[tr.length + i])}));
-  return {track, corridor};
+  const tr = [];
+  for (let s = 0; s <= total + 1e-6; s += TERRAIN_STEP_KM / NM_KM) {
+    const p = pointAtS(path, Math.min(s, total));
+    tr.push({s: Math.min(s, total), lat: p.lat, lon: p.lon});
+  }
+  const elev = await fetchElevation(tr.map(p => [p.lat, p.lon]));
+  return {track: tr.map((p, i) => ({s: p.s, ft: fin(elev[i]) ? elev[i] / 0.3048 : NaN})), corridor: []};
 }
 function pointAtS(path, s) {   // позиция и курс на разстояние s (без час)
   for (let i = 1; i < path.length; i++) if (path[i].s >= s - 1e-9) {
@@ -568,7 +564,7 @@ function column(d, ts) {
     const T = g("temperature"), RH = g("relative_humidity"), sp = g("wind_speed"), dr = g("wind_direction");
     if (!fin(T) && !fin(sp)) continue;
     const [u, v] = fin(sp) && fin(dr) ? uv(sp, dr) : [NaN, NaN];
-    col.push({p: l, z: g("geopotential_height"), T, RH, u, v, cc: g("cloud_cover")});
+    col.push({p: l, z: 44330.8 * (1 - Math.pow(l / 1013.25, 0.190263)), T, RH, u, v, cc: NaN});
   }
   return col.sort((a, b) => b.p - a.p);
 }
@@ -613,6 +609,14 @@ async function computeFlight() {
   keys.forEach((k, i) => res[i].status === "fulfilled" ? data[k] = res[i].value : errors[k] = String(res[i].reason));
   const terrain = res[keys.length].status === "fulfilled" ? res[keys.length].value : null;
   if (!terrain) errors.terrain = String(res[keys.length].reason);
+  // Коридор: височините на точките встрани + терена по пътя
+  if (terrain) {
+    const sv = Object.values(sideVis)[0];
+    if (sv) pts.forEach((p, i) => [sv[2 * i], sv[2 * i + 1]].forEach(d => {
+      if (d && fin(d.elev)) terrain.corridor.push({s: p.s, ft: d.elev / 0.3048});
+    }));
+    terrain.corridor.push(...terrain.track);
+  }
   if (!Object.keys(data).length) throw new Error(Object.values(errors).join("; "));
 
   // Вятър за путевата скорост: средно от моделите в най-близката точка
@@ -642,11 +646,11 @@ async function computeFlight() {
       const a = atAlt(col, p.alt);
       p.m[k] = a && {...a, vis: tAt(d, "visibility", ts), ccl: tAt(d, "cloud_cover_low", ts),
                      pr: tAt(d, "precipitation", ts), sn: tAt(d, "snowfall", ts), fzl: tAt(d, "freezing_level_height", ts),
-                     cape: tAt(d, "cape", ts), wx: tAt(d, "weather_code", ts), elev: d.elev};
+                     elev: d.elev};
     }
     if (terrain) {
       p.ter = terrainMax(terrain.track, p.s, 1);
-      p.terC = terrainMax(terrain.corridor, p.s, CORRIDOR_STEP_KM / NM_KM);
+      p.terC = terrainMax(terrain.corridor, p.s, STEP_KM / 2 / NM_KM);
     }
   });
   F.path.forEach((p, i) => {
