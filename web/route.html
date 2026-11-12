@@ -1324,7 +1324,8 @@ document.querySelectorAll(".lang button").forEach(b => b.addEventListener("click
 
 update();
 fitRoute();
-if (new URLSearchParams(location.search).has("etd") && validate()) calculate();   // споделен линк
+// Без автоматично смятане при отваряне: адресът винаги съдържа etd, така че
+// всяко F5 би харчило лимита на Open-Meteo, а после и бутонът — двойно.
 </script>
 </body>
 </html>
