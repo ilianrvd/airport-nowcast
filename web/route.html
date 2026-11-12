@@ -208,7 +208,7 @@ const T = {
     loading: "Сваляне на данните…", limit: "лимитът на Open-Meteo за минута е изчерпан — опитай пак след минута", failed: "Данните не можаха да се свалят",
     runInfo: "Изчислено", noModel: "няма данни",
     thS: "km", thT: "UTC", thPh: "фаза", thAlt: "ft", thTer: "терен ft", thTerC: "терен ±10 km",
-    thAgl: "над терена ±10 km", thComp: "попътен kt", thDrift: "снос", thFzl: "0 °C ft",
+    thAgl: "над терена ±10 km", thRHmax: "max RH в колоната (hPa)", thComp: "попътен kt", thDrift: "снос", thFzl: "0 °C ft",
     thCloud: "в облак", thIce: "обледяване", thVisLev: "вид. ниво m", thVisSfc: "вид. земя m (мин)",
     inCloud: "облак", good: "добра", spread: "разлика между моделите",
     thW: "вятър", thTemp: "T °C", thRH: "RH %", thCC: "облак %", thVis: "вид. земя m", thGS: "GS kt",
@@ -252,7 +252,7 @@ const T = {
     loading: "Downloading data…", limit: "Open-Meteo per-minute limit reached — try again in a minute", failed: "Could not download the data",
     runInfo: "Calculated", noModel: "no data",
     thS: "km", thT: "UTC", thPh: "phase", thAlt: "ft", thTer: "terrain ft", thTerC: "terrain ±10 km",
-    thAgl: "above terrain ±10 km", thComp: "tailwind kt", thDrift: "drift", thFzl: "0 °C ft",
+    thAgl: "above terrain ±10 km", thRHmax: "max RH in column (hPa)", thComp: "tailwind kt", thDrift: "drift", thFzl: "0 °C ft",
     thCloud: "in cloud", thIce: "icing", thVisLev: "vis level m", thVisSfc: "sfc vis m (min)",
     inCloud: "cloud", good: "good", spread: "model difference",
     thW: "wind", thTemp: "T °C", thRH: "RH %", thCC: "cloud %", thVis: "sfc vis m", thGS: "GS kt",
@@ -477,8 +477,11 @@ async function getJson(url) {
 
 // Само нивата до първото над полетното ниво: по-малко данни и по-малко
 // „тежест“ на заявката в лимита на Open-Meteo (броят се точки × променливи).
+// Нивата: до първото над полетното ниво, но поне до 500 hPa (~FL180),
+// за да се виждат в разреза и облаците над полета (средни облаци, от които вали).
+const LEVEL_TOP = 500;
 function flightLevels() {
-  const p = isaP(S.fl * 100);
+  const p = Math.min(isaP(S.fl * 100), LEVEL_TOP + 1);
   const k = LEVELS.findIndex(l => l < p);
   return k === -1 ? LEVELS : LEVELS.slice(0, k + 1);
 }
@@ -925,7 +928,7 @@ function drawChart(F) {
   const y0 = 10, ySecB = y0 + H_SEC, yTerB = ySecB + H_TER, yAx = yTerB, yStrip = yAx + H_AX;
   const Ht = yStrip + ROWS.length * ROW + 8;
   const X = k => mL + k / total * (Wd - mL - mR);
-  const yMax = Math.ceil((F.vp.top + 2500) / 1000) * 1000;
+  const yMax = Math.max(15000, Math.ceil((F.vp.top + 3000) / 1000) * 1000);   // поне до FL150
   const Y = ft => ySecB - Math.max(0, Math.min(ft, yMax)) / yMax * H_SEC;
   const km = p => p.s * NM_KM;
   const xa = i => X(i ? (km(P[i - 1]) + km(P[i])) / 2 : 0), xb = i => X(i < P.length - 1 ? (km(P[i + 1]) + km(P[i])) / 2 : total);
@@ -1085,7 +1088,7 @@ function drawData(F) {
   let h = `<table class="d"><thead><tr><th>${t("thS")}</th><th>${t("thT")}</th><th>${t("thPh")}</th><th>${t("thAlt")}</th>`
     + `<th>${t("thAgl")}</th><th>${t("thGS")}</th><th>${t("thW")}</th><th>${t("thComp")}</th><th>${t("thDrift")}</th>`
     + `<th>${t("thTemp")}</th><th>ISA</th><th>${t("thFzl")}</th><th>${t("thCloud")}</th><th>${t("thIce")}</th>`
-    + `<th>${t("thVisLev")}</th><th>${t("thVisSfc")}</th><th>&lt;5000</th><th>&lt;1500</th></tr></thead><tbody>`;
+    + `<th>${t("thVisLev")}</th><th>${t("thVisSfc")}</th><th>&lt;5000</th><th>&lt;1500</th><th>RH ICON</th><th>RH IFS</th><th>${t("thRHmax")}</th></tr></thead><tbody>`;
   for (const p of F.path) {
     const e = p.el || {};
     const w = e.wind;
@@ -1102,7 +1105,11 @@ function drawData(F) {
       + `<td>${fin(e.fzl) ? (p.alt >= e.fzl ? `<b>${Math.round(e.fzl / 100) * 100}</b>` : Math.round(e.fzl / 100) * 100) : na}</td>`
       + `<td>${agree(e.cloud, e.of, true)}</td><td>${agree(e.ice, e.of, true)}</td>`
       + `<td>${fin(lev) ? (lev === 0 ? t("inCloud") : Math.round(lev)) : t("good")}</td>`
-      + `<td>${r0(vmin(e.visSfc))}</td><td>${agree(e.sfc5000, e.of, false)}</td><td>${agree(e.sfc1500, e.of, true)}</td></tr>`;
+      + `<td>${r0(vmin(e.visSfc))}</td><td>${agree(e.sfc5000, e.of, false)}</td><td>${agree(e.sfc1500, e.of, true)}</td>`
+      + `<td>${r0((p.m.icon || {}).RH)}</td><td>${r0((p.m.ifs || {}).RH)}</td>`
+      + `<td>${(() => { const c = Object.values(p.cols || {}).flatMap(col => col.filter(x => !x.sfc && fin(x.RH)));
+                         if (!c.length) return na; const m = c.reduce((a, b) => b.RH > a.RH ? b : a);
+                         return `${Math.round(m.RH)} @${m.p}`; })()}</td></tr>`;
   }
   $("tw").innerHTML = h + "</tbody></table>";
 }
