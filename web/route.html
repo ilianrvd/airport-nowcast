@@ -155,7 +155,7 @@ footer{grid-column:1/-1;font-size:12px;color:var(--mut);line-height:1.6}
   </section>
 
   <p class="note" data-t="note">Прогнозата по маршрут е експериментална и не замества официалните прогнози за полети на ниски нива (GAMET) и предполетната метеорологична консултация.</p>
-  <footer data-t="footer">Експериментален продукт за обучение и проучване. Карта: © OpenStreetMap contributors. Модели: ICON-EU и ECMWF IFS през Open-Meteo (CC BY 4.0). Релеф: Open-Meteo Elevation API.</footer>
+  <footer data-t="footer">Експериментален продукт за обучение и проучване. Карта: © OpenStreetMap contributors, CARTO, Esri. Модели: ICON-EU и ECMWF IFS през Open-Meteo (CC BY 4.0). Релеф: Open-Meteo Elevation API.</footer>
 </main>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -189,7 +189,7 @@ const T = {
     wpAddLabel: "или координати: 42.70 23.40 · 4242N02324E", add: "Добави",
     calc: "Изчисли", remove: "Премахни", noWps: "Няма — права линия между летищата.",
     note: "Прогнозата по маршрут е експериментална и не замества официалните прогнози за полети на ниски нива (GAMET) и предполетната метеорологична консултация.",
-    footer: "Експериментален продукт за обучение и проучване. Карта: © OpenStreetMap contributors. Модели: ICON-EU и ECMWF IFS през Open-Meteo (CC BY 4.0). Релеф: Open-Meteo Elevation API.",
+    footer: "Експериментален продукт за обучение и проучване. Карта: © OpenStreetMap contributors, CARTO, Esri. Модели: ICON-EU и ECMWF IFS през Open-Meteo (CC BY 4.0). Релеф: Open-Meteo Elevation API.",
     dist: "Разстояние", time: "Време на полета", legs: "Участъци", local: "местно",
     resTitle: "Прогноза по маршрута",
     xsTitle: "Вертикален разрез", segTitle: "По участъци", rawTitle: "Данни по точки (за проверка)",
@@ -230,7 +230,7 @@ const T = {
     wpAddLabel: "or coordinates: 42.70 23.40 · 4242N02324E", add: "Add",
     calc: "Calculate", remove: "Remove", noWps: "None — direct line between the airports.",
     note: "The route forecast is experimental and does not replace the official low-level forecasts (GAMET) or a pre-flight meteorological briefing.",
-    footer: "Experimental product for training and research. Map: © OpenStreetMap contributors. Models: ICON-EU and ECMWF IFS via Open-Meteo (CC BY 4.0). Terrain: Open-Meteo Elevation API.",
+    footer: "Experimental product for training and research. Map: © OpenStreetMap contributors, CARTO, Esri. Models: ICON-EU and ECMWF IFS via Open-Meteo (CC BY 4.0). Terrain: Open-Meteo Elevation API.",
     dist: "Distance", time: "Flight time", legs: "Legs", local: "local",
     resTitle: "Route forecast",
     xsTitle: "Vertical cross-section", segTitle: "By segment", rawTitle: "Data at the points (for checking)",
@@ -1153,9 +1153,17 @@ function validate() {
 // Карта
 // ---------------------------------------------------------------
 const map = L.map("map", {zoomSnap: 0.5}).setView([42.75, 25.4], 7);
-L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-  maxZoom: 13, attribution: "© OpenStreetMap contributors",
-}).addTo(map);
+// Подложки: CARTO (по подразбиране) и топографска Esri. Сървърите на OSM
+// отказват страници без Referer (напр. отворени локално от file://).
+const base = {
+  "CARTO": L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
+    maxZoom: 13, subdomains: "abcd",
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>'}),
+  "Топо / Topo": L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}", {
+    maxZoom: 13, attribution: "Tiles © Esri — Esri, HERE, Garmin, USGS, NGA, and others"}),
+};
+base["CARTO"].addTo(map);
+L.control.layers(base, null, {position: "topright"}).addTo(map);
 const apLayer = L.layerGroup().addTo(map), wpLayer = L.layerGroup().addTo(map);
 const line = L.polyline([], {color: "#121821", weight: 3, opacity: .85}).addTo(map);
 const profLayer = L.layerGroup().addTo(map);
