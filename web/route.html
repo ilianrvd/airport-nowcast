@@ -164,10 +164,13 @@ const T = {
     note: "Прогнозата по маршрут е експериментална и не замества официалните прогнози за полети на ниски нива (GAMET) и предполетната метеорологична консултация.",
     footer: "Експериментален продукт за обучение и проучване. Карта: © OpenStreetMap contributors. Модели: ICON-EU и ECMWF IFS през Open-Meteo (CC BY 4.0). Релеф: Open-Meteo Elevation API.",
     dist: "Разстояние", time: "Време на полета", legs: "Участъци", local: "местно",
-    resTitle: "Данни по точките (временен изглед за проверка, етап 3)",
+    resTitle: "Елементи по точките (временен изглед за проверка, етап 4)",
     loading: "Сваляне на данните…", failed: "Данните не можаха да се свалят",
     runInfo: "Изчислено", noModel: "няма данни",
     thS: "NM", thT: "UTC", thPh: "фаза", thAlt: "ft", thTer: "терен ft", thTerC: "терен ±10 km",
+    thAgl: "над терена ±10 km", thComp: "попътен kt", thDrift: "снос", thFzl: "0 °C ft",
+    thCloud: "в облак", thIce: "обледяване", thVisLev: "вид. ниво m", thVisSfc: "вид. земя m (мин)",
+    inCloud: "облак", good: "добра", spread: "разлика между моделите",
     thW: "вятър", thTemp: "T °C", thRH: "RH %", thCC: "облак %", thVis: "вид. земя m", thGS: "GS kt",
     phClimb: "изкачв.", phCruise: "ниво", phDesc: "сниж.",
     samples: "точки", beforeArr: "преди кацането", notReached: "Маршрутът е къс — не достига",
@@ -190,10 +193,13 @@ const T = {
     note: "The route forecast is experimental and does not replace the official low-level forecasts (GAMET) or a pre-flight meteorological briefing.",
     footer: "Experimental product for training and research. Map: © OpenStreetMap contributors. Models: ICON-EU and ECMWF IFS via Open-Meteo (CC BY 4.0). Terrain: Open-Meteo Elevation API.",
     dist: "Distance", time: "Flight time", legs: "Legs", local: "local",
-    resTitle: "Data at the points (temporary review view, stage 3)",
+    resTitle: "Elements at the points (temporary review view, stage 4)",
     loading: "Downloading data…", failed: "Could not download the data",
     runInfo: "Calculated", noModel: "no data",
     thS: "NM", thT: "UTC", thPh: "phase", thAlt: "ft", thTer: "terrain ft", thTerC: "terrain ±10 km",
+    thAgl: "above terrain ±10 km", thComp: "tailwind kt", thDrift: "drift", thFzl: "0 °C ft",
+    thCloud: "in cloud", thIce: "icing", thVisLev: "vis level m", thVisSfc: "sfc vis m (min)",
+    inCloud: "cloud", good: "good", spread: "model difference",
     thW: "wind", thTemp: "T °C", thRH: "RH %", thCC: "cloud %", thVis: "sfc vis m", thGS: "GS kt",
     phClimb: "climb", phCruise: "level", phDesc: "desc.",
     samples: "points", beforeArr: "before arrival", notReached: "Route too short — does not reach",
@@ -418,12 +424,12 @@ function flightLevels() {
   const k = LEVELS.findIndex(l => l < p);
   return k === -1 ? LEVELS : LEVELS.slice(0, k + 1);
 }
-async function fetchModel(key, pts, t0, t1) {
+async function fetchModel(key, pts, t0, t1, only = null) {
   const q = new URLSearchParams({
     latitude: pts.map(p => p.lat.toFixed(4)).join(","),
     longitude: pts.map(p => p.lon.toFixed(4)).join(","),
     models: MODELS[key],
-    hourly: [...SFC_VARS, ...flightLevels().flatMap(l => PL_VARS.map(v => `${v}_${l}hPa`))].join(","),
+    hourly: (only || [...SFC_VARS, ...flightLevels().flatMap(l => PL_VARS.map(v => `${v}_${l}hPa`))]).join(","),
     start_hour: isoHour(t0), end_hour: isoHour(t1 + 3600000),
     wind_speed_unit: "kn", timezone: "GMT", timeformat: "unixtime", cell_selection: "nearest",
   });
@@ -547,7 +553,11 @@ async function computeFlight() {
   const t1 = Math.max(F0.eta.getTime() * 2 - S.etd.getTime(), F0.eta.getTime() + 3600000);   // запас за насрещен вятър
   const pts = F0.path;
   const keys = Object.keys(MODELS);
-  const res = await Promise.allSettled([...keys.map(k => fetchModel(k, pts, t0, t1)), fetchTerrain(pts)]);
+  const side = pts.flatMap(p => [90, -90].map(a => { const c = destPoint([p.lat, p.lon], p.trk + a, VIS_SIDE_KM); return {lat: c[0], lon: c[1]}; }));
+  const res = await Promise.allSettled([...keys.map(k => fetchModel(k, pts, t0, t1)), fetchTerrain(pts),
+                                        ...keys.map(k => fetchModel(k, side, t0, t1, ["visibility"]))]);
+  const sideVis = {};
+  keys.forEach((k, i) => { const r = res[keys.length + 1 + i]; if (r.status === "fulfilled") sideVis[k] = r.value; });
   const data = {}, errors = {};
   keys.forEach((k, i) => res[i].status === "fulfilled" ? data[k] = res[i].value : errors[k] = String(res[i].reason));
   const terrain = res[keys.length].status === "fulfilled" ? res[keys.length].value : null;
@@ -578,7 +588,7 @@ async function computeFlight() {
       const d = data[k][i], ts = p.t.getTime();
       const a = atAlt(column(d, ts), p.alt);
       p.m[k] = a && {...a, vis: tAt(d, "visibility", ts), ccl: tAt(d, "cloud_cover_low", ts),
-                     pr: tAt(d, "precipitation", ts), fzl: tAt(d, "freezing_level_height", ts),
+                     pr: tAt(d, "precipitation", ts), sn: tAt(d, "snowfall", ts), fzl: tAt(d, "freezing_level_height", ts),
                      cape: tAt(d, "cape", ts), wx: tAt(d, "weather_code", ts), elev: d.elev};
     }
     if (terrain) {
@@ -586,28 +596,118 @@ async function computeFlight() {
       p.terC = terrainMax(terrain.corridor, p.s, CORRIDOR_STEP_KM / NM_KM);
     }
   });
+  F.path.forEach((p, i) => {
+    const ts = p.t.getTime();
+    const vs = {};
+    for (const k of keys) if (sideVis[k]) vs[k] = [sideVis[k][2 * i], sideVis[k][2 * i + 1]].map(d => tAt(d, "visibility", ts));
+    p.el = elements(p, vs);
+  });
   F.terrain = terrain; F.errors = errors; F.data = data;
   return F;
 }
 
-// Временен изглед за проверка на етап 3
+// ---------------------------------------------------------------
+// Елементи (етап 4)
+// ---------------------------------------------------------------
+// Непрекъснатите величини — теглово средно на моделите (вятър по u/v);
+// разликата между тях е несигурност. Облак на нивото, обледяване и
+// видимост — съгласие: в колко от моделите с данни е изпълнено.
+// Теглата са начални и ще се калибрират от архива.
+const W = {icon: 0.5, ifs: 0.5};
+const VIS_SIDE_KM = 10;
+const CLOUD_CC = 50, CLOUD_RH = 95;        // в облак: облачност на нивото ≥ 50%, без нея RH ≥ 95%
+const ICE_T = [-20, 0], ICE_RH = 90;       // риск от обледяване: 0…−20 °C и (облак или RH ≥ 90%)
+const VIS_THR = [5000, 1500];              // прагове за VFR, m
+const SPREAD_KT = 10, SPREAD_T = 3;        // голяма разлика между моделите
+const isaT = ft => 15 - 1.98 * ft / 1000;
+
+function wmean(vals) {   // {модел: стойност} → средно по W, без NaN
+  let a = 0, w = 0;
+  for (const [k, x] of Object.entries(vals)) if (fin(x) && W[k]) { a += W[k] * x; w += W[k]; }
+  return w ? a / w : NaN;
+}
+// Видимост при валеж (m) по интензитета, mm/h; при сняг по-силно намаление
+function precipVis(pr, snow) {
+  if (!fin(pr) || pr < 0.1) return NaN;
+  if (snow) return pr < 0.5 ? 2000 : pr < 1.5 ? 1000 : 500;
+  return pr < 2.5 ? 6000 : pr < 7.6 ? 3000 : 1500;
+}
+function elements(p, sideVis) {
+  const ks = Object.keys(p.m).filter(k => p.m[k]);
+  const pick = f => Object.fromEntries(ks.map(k => [k, f(p.m[k], k)]));
+  const e = {of: ks.length};
+  if (!ks.length) return e;
+
+  // Вятър на нивото и компонентите по пътя
+  const u = wmean(pick(m => m.u)), v = wmean(pick(m => m.v));
+  if (fin(u) && fin(v)) {
+    const [dir, spd] = dirspd(u, v), tr = p.trk * D2R;
+    const along = u * Math.sin(tr) + v * Math.cos(tr);          // + попътен
+    const cross = u * Math.cos(tr) - v * Math.sin(tr);          // + отляво надясно спрямо пътя
+    const tas = S.tas * (p.phase === "climb" ? CLIMB_TAS : 1);
+    e.wind = {dir, spd, along, cross, drift: Math.asin(Math.max(-1, Math.min(1, cross / tas))) / D2R};
+    const uvs = ks.map(k => [p.m[k].u, p.m[k].v]).filter(([a, b]) => fin(a) && fin(b));
+    if (uvs.length > 1) e.wind.spread = Math.hypot(uvs[0][0] - uvs[1][0], uvs[0][1] - uvs[1][1]);
+  }
+  // Температура, ISA, нулева изотерма
+  e.T = wmean(pick(m => m.T));
+  e.isa = e.T - isaT(p.alt);
+  const Ts = ks.map(k => p.m[k].T).filter(fin);
+  if (Ts.length > 1) e.Tspread = Math.abs(Ts[0] - Ts[1]);
+  e.fzl = wmean(pick(m => m.fzl / 0.3048));                     // ft AMSL
+  // Над терена: на нивото — над най-високото в коридора ±10 km; при изкачване/снижение — над терена по пътя
+  const ter = p.phase === "cruise" ? p.terC : p.ter;
+  e.agl = fin(ter) ? p.alt - ter : NaN;
+
+  // Облак на нивото и обледяване — по модели
+  const inCloud = m => m.below ? false : fin(m.cc) ? m.cc >= CLOUD_CC : fin(m.RH) && m.RH >= CLOUD_RH;
+  const icing = m => !m.below && fin(m.T) && m.T <= ICE_T[1] && m.T >= ICE_T[0]
+                      && (inCloud(m) || (fin(m.RH) && m.RH >= ICE_RH));
+  e.cloud = ks.filter(k => inCloud(p.m[k])).length;
+  e.ice = ks.filter(k => icing(p.m[k])).length;
+
+  // Видимост на нивото: облак → 0; валеж → по интензитета; иначе добра
+  const levVis = m => inCloud(m) ? 0 : precipVis(m.pr, (fin(m.T) && m.T < 0.5) || (fin(m.sn) && m.sn > 0));
+  e.visLev = pick(levVis);
+  // Видимост на земята: най-ниската в точката и на ±10 км встрани
+  e.visSfc = pick((m, k) => Math.min(...[m.vis, ...(sideVis[k] || [])].filter(fin)));
+  for (const k of ks) if (!Number.isFinite(e.visSfc[k])) e.visSfc[k] = NaN;
+  for (const thr of VIS_THR) {
+    e[`lev${thr}`] = ks.filter(k => fin(e.visLev[k]) && e.visLev[k] < thr).length;
+    e[`sfc${thr}`] = ks.filter(k => fin(e.visSfc[k]) && e.visSfc[k] < thr).length;
+  }
+  return e;
+}
+
+// Временен изглед за проверка (етапи 3–4); заменя се в етап 5
 function drawData(F) {
-  const keys = Object.keys(MODELS).filter(k => F.data[k]);
-  const r0 = x => fin(x) ? Math.round(x) : "<span class=na>—</span>";
-  const wind = a => a && fin(a.u) ? (([d, s]) => `${String(Math.round(d / 10) * 10 % 360 || 360).padStart(3, "0")}/${String(Math.round(s)).padStart(2, "0")}`)(dirspd(a.u, a.v)) : "<span class=na>—</span>";
+  const na = "<span class=na>—</span>";
+  const r0 = x => fin(x) ? Math.round(x) : na;
+  const agree = (n, of, crit) => !of || !n ? `<span class=na>0/${of || 0}</span>`
+    : `<span style="background:${n === of ? (crit ? "#F4C7C1" : "#FBE3B6") : "#FBE3B6"};padding:0 4px;border-radius:3px">${n}/${of}</span>`;
   const ph = {climb: t("phClimb"), cruise: t("phCruise"), desc: t("phDesc")};
-  const mh = (lab) => keys.map(k => `<th>${lab}<br>${k.toUpperCase()}</th>`).join("");
+  const vmin = o => { const v = Object.values(o || {}).filter(fin); return v.length ? Math.min(...v) : NaN; };
   let h = `<table class="d"><thead><tr><th>${t("thS")}</th><th>${t("thT")}</th><th>${t("thPh")}</th><th>${t("thAlt")}</th>`
-    + `<th>${t("thTer")}</th><th>${t("thTerC")}</th><th>${t("thGS")}</th>${mh(t("thW"))}${mh(t("thTemp"))}${mh(t("thRH"))}${mh(t("thCC"))}${mh(t("thVis"))}</tr></thead><tbody>`;
+    + `<th>${t("thAgl")}</th><th>${t("thGS")}</th><th>${t("thW")}</th><th>${t("thComp")}</th><th>${t("thDrift")}</th>`
+    + `<th>${t("thTemp")}</th><th>ISA</th><th>${t("thFzl")}</th><th>${t("thCloud")}</th><th>${t("thIce")}</th>`
+    + `<th>${t("thVisLev")}</th><th>${t("thVisSfc")}</th><th>&lt;5000</th><th>&lt;1500</th></tr></thead><tbody>`;
   for (const p of F.path) {
-    const m = k => p.m[k] || {};
+    const e = p.el || {};
+    const w = e.wind;
+    const unc = w && fin(w.spread) && w.spread >= SPREAD_KT ? ` <span title="${t("spread")}">±${Math.round(w.spread)}</span>` : "";
+    const lev = vmin(e.visLev);
     h += `<tr class="${p.phase}"><td>${Math.round(p.s)}</td><td>${hhmmUtc(p.t)}</td><td class="ph">${ph[p.phase]}</td>`
-      + `<td>${Math.round(p.alt / 100) * 100}</td><td>${r0(p.ter)}</td><td>${r0(p.terC)}</td><td>${r0(p.gs)}</td>`
-      + keys.map(k => `<td>${wind(m(k))}</td>`).join("")
-      + keys.map(k => `<td>${fin(m(k).T) ? m(k).T.toFixed(1) : "<span class=na>—</span>"}</td>`).join("")
-      + keys.map(k => `<td>${r0(m(k).RH)}</td>`).join("")
-      + keys.map(k => `<td>${r0(m(k).cc)}</td>`).join("")
-      + keys.map(k => `<td>${r0(m(k).vis)}</td>`).join("") + "</tr>";
+      + `<td>${Math.round(p.alt / 100) * 100}</td><td>${fin(e.agl) ? (e.agl < 1000 && p.phase === "cruise" ? `<b style="color:#6E160C">${Math.round(e.agl / 100) * 100}</b>` : Math.round(e.agl / 100) * 100) : na}</td>`
+      + `<td>${r0(p.gs)}</td>`
+      + `<td>${w ? `${String(Math.round(w.dir / 10) * 10 % 360 || 360).padStart(3, "0")}/${String(Math.round(w.spd)).padStart(2, "0")}${unc}` : na}</td>`
+      + `<td>${w ? (w.along >= 0 ? "+" : "−") + Math.abs(Math.round(w.along)) : na}</td>`
+      + `<td>${w ? (w.drift >= 0 ? "R" : "L") + Math.abs(Math.round(w.drift)) + "°" : na}</td>`
+      + `<td>${fin(e.T) ? e.T.toFixed(0) : na}${fin(e.Tspread) && e.Tspread >= SPREAD_T ? ` <span title="${t("spread")}">±${Math.round(e.Tspread)}</span>` : ""}</td>`
+      + `<td>${fin(e.isa) ? (e.isa >= 0 ? "+" : "−") + Math.abs(Math.round(e.isa)) : na}</td>`
+      + `<td>${fin(e.fzl) ? (p.alt >= e.fzl ? `<b>${Math.round(e.fzl / 100) * 100}</b>` : Math.round(e.fzl / 100) * 100) : na}</td>`
+      + `<td>${agree(e.cloud, e.of, true)}</td><td>${agree(e.ice, e.of, true)}</td>`
+      + `<td>${fin(lev) ? (lev === 0 ? t("inCloud") : Math.round(lev)) : t("good")}</td>`
+      + `<td>${r0(vmin(e.visSfc))}</td><td>${agree(e.sfc5000, e.of, false)}</td><td>${agree(e.sfc1500, e.of, true)}</td></tr>`;
   }
   $("tw").innerHTML = h + "</tbody></table>";
 }
