@@ -9,7 +9,7 @@
 Употреба:  python render_html.py      → отвори output\\index.html в браузъра
 """
 
-import os, sys, json, html
+import os, sys, json, html, shutil
 import datetime as dt
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -233,6 +233,9 @@ header{background:#121821;color:#fff}
 .brand{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.brand b{font-size:19px}
 .warn{background:#F5C451;color:#3D2A00;font-size:12px;font-weight:700;padding:4px 9px;border-radius:4px;letter-spacing:.4px}
 .upd{font-size:13px;color:#C9D1DC}.upd b{color:#fff;font-family:'IBM Plex Mono',monospace}
+.views{background:#fff;border-bottom:1px solid #DDE1E7;padding:0 20px;display:flex;gap:4px}
+.views a{display:block;padding:11px 14px;font-size:14px;font-weight:600;color:var(--mut);text-decoration:none;border-bottom:3px solid transparent}
+.views a[aria-current=page]{color:var(--ink);border-bottom-color:#121821}
 nav{background:#fff;border-bottom:1px solid #DDE1E7;padding:8px 20px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 nav button{font:inherit;border:2px solid transparent;border-radius:6px;min-width:104px;min-height:46px;padding:3px 12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center}
 nav button b{font-family:'IBM Plex Mono',monospace;font-size:15px}nav button span{font-size:12px}
@@ -309,6 +312,7 @@ def main():
 <header><div class="bar"><div class="brand"><b>Летищен nowcasting</b>
 <span class="warn">ЕКСПЕРИМЕНТАЛЕН · НЕ ЗА ОПЕРАТИВНА УПОТРЕБА</span></div>
 <div class="upd">Обновено <b>{now:%H:%M} UTC</b> · следващо около <b>{nxt:%H:%M} UTC</b></div></div></header>
+<nav class="views" aria-label="Изгледи"><a href="index.html" aria-current="page">Летища</a><a href="route.html">Прогноза по маршрут</a></nav>
 <nav aria-label="Летища">{''.join(nav)}<span class="hint">цвят = най-лошото в следващите 6 ч</span></nav>
 <main>{panels}
 <section class="legend" aria-label="Легенда">
@@ -325,6 +329,11 @@ def main():
     with open(out, "w", encoding="utf-8") as f:
         f.write(page)
     print(f"Записано: {out}")
+    # Прогноза по маршрут: статична страница (смята в браузъра)
+    src = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "route.html")
+    if os.path.exists(src):
+        shutil.copy(src, os.path.join(S.OUTPUT_DIR, "route.html"))
+        print(f"Копирано: {os.path.join(S.OUTPUT_DIR, 'route.html')}")
 
 
 if __name__ == "__main__":

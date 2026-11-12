@@ -1,0 +1,1508 @@
+<!doctype html>
+<html lang="bg">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Прогноза по маршрут</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<!--
+  Прогноза по маршрут — етап 1: форма, карта, параметри в адреса, надпис.
+  Страницата смята в браузъра (Open-Meteo от етап 3). Без сървър: отваря се и локално.
+
+  Параметри в адреса (за споделяне с линк):
+    from, to   ICAO на летищата (LBSF, LBBG, LBWN, LBPD, LBGO)
+    etd        време на излитане, UTC, YYYYMMDDHHMM
+    tas        крейсерска скорост, kt
+    fl         полетно ниво (напр. 065)
+    wp         междинни точки lat,lon;lat,lon (десетични градуси)
+    lang       bg | en
+-->
+<style>
+:root{--ink:#14181F;--mut:#4B5563;--line:#E3E6EB;--bg:#F3F4F6;--acc:#1F5FBF;--err:#6E160C;--errbg:#F4C7C1}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;font-feature-settings:"locl" 0}
+header{background:#121821;color:#fff}
+.bar{padding:12px 20px;display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;justify-content:space-between}
+.brand{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.brand b{font-size:19px}
+.warn{background:#F5C451;color:#3D2A00;font-size:12px;font-weight:700;padding:4px 9px;border-radius:4px;letter-spacing:.4px}
+.lang{display:flex;gap:4px}
+.lang button{font:inherit;font-size:12px;font-weight:600;background:transparent;color:#C9D1DC;border:1px solid #3A4453;border-radius:4px;padding:3px 9px;cursor:pointer}
+.lang button[aria-pressed=true]{background:#fff;color:#121821;border-color:#fff}
+.views{background:#fff;border-bottom:1px solid #DDE1E7;padding:0 20px;display:flex;gap:4px}
+.views a{display:block;padding:11px 14px;font-size:14px;font-weight:600;color:var(--mut);text-decoration:none;border-bottom:3px solid transparent}
+.views a[aria-current=page]{color:var(--ink);border-bottom-color:#121821}
+main{padding:14px 20px 30px;display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:12px;align-items:start}
+@media (max-width:820px){main{grid-template-columns:1fr;padding:12px 16px 24px}}
+.card{background:#fff;border:1px solid #DDE1E7;border-radius:8px;padding:12px 14px}
+.card h2{margin:0 0 10px;font-size:12px;color:var(--mut);letter-spacing:.4px;text-transform:uppercase}
+form{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px}
+label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:var(--mut)}
+label.full{grid-column:1/-1}
+input,select{font:inherit;font-size:14px;font-weight:400;color:var(--ink);background:#fff;border:1px solid #C9CED6;border-radius:6px;padding:7px 9px;min-height:38px;width:100%}
+input:focus,select:focus{outline:2px solid var(--acc);outline-offset:0;border-color:var(--acc)}
+input[aria-invalid=true]{border-color:var(--err);background:#FDF2F0}
+.mono{font-family:'IBM Plex Mono',monospace}
+.hint{font-size:11.5px;font-weight:400;color:var(--mut)}
+.err{font-size:12px;font-weight:600;color:var(--err)}
+.wps{grid-column:1/-1;display:flex;flex-direction:column;gap:6px}
+.wps .head{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;font-weight:600;color:var(--mut)}
+.wp{display:grid;grid-template-columns:28px 1fr 34px;gap:6px;align-items:center}
+.wp .n{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--mut);text-align:center}
+.wp button,.btn{font:inherit;font-size:13px;border:1px solid #C9CED6;background:#fff;border-radius:6px;min-height:34px;cursor:pointer}
+.wp button:hover,.btn:hover{background:#F3F4F6}
+.btn.primary{grid-column:1/-1;background:#121821;color:#fff;border-color:#121821;font-weight:600;min-height:42px}
+.btn.primary:disabled{background:#9AA3AF;border-color:#9AA3AF;cursor:not-allowed}
+.empty{font-size:12.5px;color:var(--mut);padding:2px 0}
+#map{height:min(70vh,620px);min-height:380px;border-radius:8px;border:1px solid #DDE1E7}
+.sum{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;margin-top:10px}
+.sum b{font-family:'IBM Plex Mono',monospace;font-weight:600}
+.res{grid-column:1/-1}
+main>*,.rgrid>*{min-width:0}
+.status{font-size:13px;color:var(--mut);margin:0 0 8px}
+.status.e{color:var(--err);font-weight:600}
+.tw{overflow-x:auto;border:1px solid #DDE1E7;border-radius:8px;background:#fff}
+table.d{border-collapse:collapse;width:100%;font-size:12.5px}
+table.d th,table.d td{border-bottom:1px solid var(--line);padding:5px 7px;text-align:right;white-space:nowrap}
+table.d th{background:#F8F9FB;color:var(--mut);font-weight:600;font-size:11.5px;position:sticky;top:0}
+table.d td{font-family:'IBM Plex Mono',monospace}
+table.d td.ph{font-family:inherit;color:var(--mut);text-align:left}
+table.d tr.cruise td{background:#fff}table.d tr.climb td,table.d tr.desc td{background:#F5F8FD}
+.na{color:#9AA3AF}
+.rgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
+@media (max-width:820px){.rgrid{grid-template-columns:1fr}}
+.end{font-size:13px;line-height:1.5;padding:6px 0;border-bottom:1px solid var(--line)}.end:last-of-type{border:0}
+.end h3{margin:0 0 3px;font-size:13px}.end h3 span{font-weight:400;color:var(--mut)}
+.end .row{display:flex;flex-wrap:wrap;gap:3px 10px}
+.end .row span b{font-family:'IBM Plex Mono',monospace;font-weight:600}
+.ov-st{display:inline-block;font-weight:700;font-size:13px;padding:3px 10px;border-radius:4px;margin-bottom:8px}
+.ov{list-style:none;margin:0;padding:0;font-size:13px;line-height:1.5}
+.ov li{padding:4px 0;border-bottom:1px solid var(--line)}.ov li:last-child{border:0}
+.ov b{font-family:'IBM Plex Mono',monospace;font-weight:600}
+.tag{display:inline-block;padding:0 5px;border-radius:3px;font-family:'IBM Plex Mono',monospace;font-size:12px}
+.c-crit{background:#F4C7C1;color:#6E160C}.c-warn{background:#FBE3B6;color:#5C3A00}.c-info{background:#DCE8F7;color:#163A6B}
+#xs{overflow-x:auto;position:relative}.xs-box{position:relative;min-width:820px}
+#xs svg{width:100%;height:auto;display:block;touch-action:pan-y}
+.xs-tip{position:absolute;z-index:5;pointer-events:none;background:#121821;color:#fff;border-radius:6px;padding:8px 10px;font-size:12px;line-height:1.35;box-shadow:0 6px 18px rgba(18,24,33,.25);min-width:180px}
+.xs-tip div{display:flex;justify-content:space-between;gap:14px}.xs-tip b{font-family:'IBM Plex Mono',monospace;font-weight:600;order:2}.xs-tip span{color:#AEB7C4}
+.xs-leg{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12px;color:#374151;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.xs-leg span{display:inline-flex;align-items:center;gap:6px}
+.xs-leg i{display:inline-block;width:16px;height:12px;border-radius:3px}
+.xs-leg i.ln{height:0;width:16px;border-top:2px solid;border-radius:0}
+table.d td.l{text-align:left;font-family:inherit}
+.note{grid-column:1/-1;font-size:12.5px;color:#3D2A00;background:#FDF3D7;border:1px solid #F0D58C;border-radius:8px;padding:9px 12px;line-height:1.45}
+footer{grid-column:1/-1;font-size:12px;color:var(--mut);line-height:1.6}
+.ap-ic{background:#121821;color:#fff;border-radius:4px;font:600 11px 'IBM Plex Mono',monospace;padding:2px 5px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.wp-ic{background:#fff;color:#121821;border:2px solid #121821;border-radius:50%;width:22px!important;height:22px!important;font:600 11px 'IBM Plex Mono',monospace;display:flex!important;align-items:center;justify-content:center;margin:-11px 0 0 -11px!important}
+.leaflet-popup-content{font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:13px}
+</style>
+</head>
+<body>
+<header><div class="bar">
+  <div class="brand"><b data-t="title">Прогноза по маршрут</b>
+    <span class="warn" data-t="warn">ЕКСПЕРИМЕНТАЛЕН · НЕ ЗА ОПЕРАТИВНА УПОТРЕБА</span></div>
+  <div class="lang" role="group" aria-label="Език / Language">
+    <button type="button" data-lang="bg" aria-pressed="true">БГ</button>
+    <button type="button" data-lang="en" aria-pressed="false">EN</button>
+  </div>
+</div></header>
+<nav class="views" aria-label="Изгледи">
+  <a href="index.html" data-t="viewAirports">Летища</a>
+  <a href="route.html" aria-current="page" data-t="viewRoute">Прогноза по маршрут</a>
+</nav>
+
+<main>
+  <section class="card" aria-labelledby="h-flight">
+    <h2 id="h-flight" data-t="flight">Полет</h2>
+    <form id="f" novalidate>
+      <label><span data-t="from">Излитане</span><select id="from"></select></label>
+      <label><span data-t="to">Кацане</span><select id="to"></select></label>
+      <label class="full"><span data-t="etd">Време на излитане (UTC)</span>
+        <input id="etd" type="datetime-local" step="300">
+        <span class="hint" id="etd-hint"></span></label>
+      <label><span data-t="tas">Крейсерска скорост (TAS, kt)</span>
+        <input id="tas" type="number" inputmode="numeric" min="40" max="250" step="5" class="mono"></label>
+      <label><span data-t="fl">Полетно ниво (FL)</span>
+        <input id="fl" type="number" inputmode="numeric" min="10" max="195" step="5" class="mono"></label>
+      <div class="wps">
+        <div class="head"><span data-t="wps">Междинни точки</span><span class="hint" data-t="wpsHint">клик на картата добавя точка</span></div>
+        <div id="wp-list"></div>
+        <label><span class="hint" data-t="wpAddLabel">или координати: 42.70 23.40 · 4242N02324E</span>
+          <span style="display:flex;gap:6px"><input id="wp-new" class="mono" autocomplete="off" spellcheck="false">
+          <button type="button" class="btn" id="wp-add" style="min-width:80px" data-t="add">Добави</button></span></label>
+        <span class="err" id="wp-err" role="alert"></span>
+      </div>
+      <span class="err full" id="f-err" role="alert" style="grid-column:1/-1"></span>
+      <button type="submit" class="btn primary" id="go" data-t="calc">Изчисли</button>
+    </form>
+    <div class="sum" id="sum" aria-live="polite"></div>
+  </section>
+
+  <section aria-label="Карта">
+    <div id="map"></div>
+  </section>
+
+  <section class="res" aria-labelledby="h-res" id="res" hidden>
+    <h2 id="h-res" class="status" style="font-weight:700;color:var(--ink)" data-t="resTitle">Данни по точките</h2>
+    <p class="status" id="status" aria-live="polite"></p>
+    <div class="card xs-wrap"><h2 data-t="xsTitle">Разрез и елементи по маршрута</h2><div id="xs"></div><div class="xs-leg" id="xs-leg"></div></div>
+    <div class="rgrid" style="margin-top:12px">
+      <div class="card" id="overall"></div>
+      <div class="card" id="ends"></div>
+    </div>
+    <details style="margin-top:12px"><summary class="status" style="cursor:pointer" data-t="rawTitle">Данни по точки</summary>
+      <div class="tw" id="tw"></div></details>
+  </section>
+
+  <p class="note" data-t="note">Прогнозата по маршрут е експериментална и не замества официалните прогнози за полети на ниски нива (GAMET) и предполетната метеорологична консултация.</p>
+  <footer data-t="footer">Експериментален продукт за обучение и проучване. Карта: © OpenStreetMap contributors, OpenTopoMap, Esri. Модел: ICON-EU (DWD) през Open-Meteo (CC BY 4.0). Релеф: Open-Meteo Elevation API.</footer>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+"use strict";
+
+// ---------------------------------------------------------------
+// Летища (същите като в config/settings.py)
+// ---------------------------------------------------------------
+const AIRPORTS = {
+  LBSF: {bg: "София",        en: "Sofia",          lat: 42.6952, lon: 23.4064, elev: 531},
+  LBBG: {bg: "Бургас",       en: "Burgas",         lat: 42.5696, lon: 27.5152, elev: 41},
+  LBWN: {bg: "Варна",        en: "Varna",          lat: 43.2321, lon: 27.8251, elev: 70},
+  LBPD: {bg: "Пловдив",      en: "Plovdiv",        lat: 42.0678, lon: 24.8508, elev: 182},
+  LBGO: {bg: "Г. Оряховица", en: "G. Oryahovitsa", lat: 43.1514, lon: 25.7129, elev: 87},
+};
+const HORIZON_H = 3;           // излитане до 3 ч напред
+const DEF = {from: "LBSF", to: "LBWN", tas: 100, fl: 65};
+const LIM = {tas: [40, 250], fl: [10, 195]};
+
+// ---------------------------------------------------------------
+// Текстове
+// ---------------------------------------------------------------
+const T = {
+  bg: {
+    title: "Прогноза по маршрут", warn: "ЕКСПЕРИМЕНТАЛЕН · НЕ ЗА ОПЕРАТИВНА УПОТРЕБА",
+    viewAirports: "Летища", viewRoute: "Прогноза по маршрут", flight: "Полет",
+    from: "Излитане", to: "Кацане", etd: "Време на излитане (UTC)",
+    tas: "Крейсерска скорост (TAS, kt)", fl: "Полетно ниво (FL)",
+    wps: "Междинни точки", wpsHint: "клик на картата добавя точка",
+    wpAddLabel: "или координати: 42.70 23.40 · 4242N02324E", add: "Добави",
+    calc: "Изчисли", remove: "Премахни", noWps: "Няма — права линия между летищата.",
+    note: "Прогнозата по маршрут е експериментална и не замества официалните прогнози за полети на ниски нива (GAMET) и предполетната метеорологична консултация.",
+    footer: "Експериментален продукт за обучение и проучване. Карта: © OpenStreetMap contributors, OpenTopoMap, Esri. Модел: ICON-EU (DWD) през Open-Meteo (CC BY 4.0). Релеф: Open-Meteo Elevation API.",
+    dist: "Разстояние", time: "Време на полета", legs: "Участъци", local: "местно",
+    resTitle: "Прогноза по маршрута",
+    xsTitle: "Разрез и елементи по маршрута", segTitle: "По участъци", rawTitle: "Данни по точки (за проверка)",
+    ovTitle: "Обобщение", stRed: "НЕБЛАГОПРИЯТНО", stYel: "ВНИМАНИЕ", stGrn: "БЕЗ ОСОБЕНОСТИ",
+    ovWind: "Среден вятър на нивото", ovComp: "попътен", ovHead: "насрещен", ovDrift: "Най-голям снос",
+    ovFzl: "Нулева изотерма (най-ниска)", ovAgl: "Най-малък запас над релефа (±10 km)", terWarn: "под 1000 ft над релефа",
+    ovCloud: "В облак", ovIce: "Обледяване", ovVis: "Видимост на земята", ovNone: "няма",
+    ovModels: "Модел: ICON-EU (DWD) през Open-Meteo.", yes: "да", no: "не", lgCloud: "облак",
+    aglExpl: "Запас над релефа: на колко ft е полетът над най-високата точка на релефа в ивица ±10 km от двете страни на пътя (само на крейсерското ниво). Под 1000 ft — жълто, под 500 ft — червено.", nmFrom: "km",
+    rWind: "вятър", rComp: "попътен kt", rCloud: "в облак", rIce: "обледяване", rVisL: "вид. на нивото",
+    rVisS: "вид. на земята", rAgl: "запас над релефа ft", rT: "T °C", lgRelief: "релеф (отделна скала)", relief: "релеф", tipWhere: "време, място", tipAlt: "височина",
+    lgFlight: "полет: без особености / внимание / неблагоприятно",
+    segPart: "участък", segClimb: "изкачване", segCruise: "ниво", segDesc: "снижение",
+    lgTer: "релеф по пътя", lgTerC: "най-високо ±10 km", lgCloud2: "облак, 2 модела", lgCloud1: "облак, 1 модел",
+    lgFzl: "0 °C", lgPath: "полет", lgIce: "обледяване",
+    endsTitle: "Летищата", dep: "Излитане", arr: "Кацане", endWind: "вятър", endVis: "вид.", endCig: "таван",
+    endHigh: "висок", endNoTable: "Летищната таблица не е достъпна", endOut: "извън хоризонта на таблицата (12 ч)",
+    endStale: "таблицата е от", endLink: "Летищна таблица →", endCol: "срок",
+    loading: "Сваляне на данните…", sec: "с", limit: "лимитът на Open-Meteo за минута е изчерпан — опитай пак след минута", failed: "Данните не можаха да се свалят",
+    runInfo: "Изчислено", noModel: "няма данни",
+    thS: "km", thT: "UTC", thPh: "фаза", thAlt: "ft", thTer: "терен ft", thTerC: "терен ±10 km",
+    thAgl: "над терена ±10 km", thRHmax: "max RH в колоната (hPa)", ice: "лед", thComp: "попътен kt", thDrift: "снос", thFzl: "0 °C ft",
+    thCloud: "в облак", thIce: "обледяване", thVisLev: "вид. ниво m", thVisSfc: "вид. земя m (мин)",
+    inCloud: "облак", good: "добра", spread: "разлика между моделите",
+    thW: "вятър", thTemp: "T °C", thRH: "RH %", thCC: "облак %", thVis: "вид. земя m", thGS: "GS kt",
+    phClimb: "изкачв.", phCruise: "ниво", phDesc: "сниж.",
+    samples: "точки", beforeArr: "преди кацането", notReached: "Маршрутът е къс — не достига",
+    errSame: "Летищата на излитане и кацане са еднакви.",
+    errEtdPast: "Времето на излитане е минало.",
+    errEtdFar: `Излитането може да е до ${HORIZON_H} ч напред.`,
+    errTas: `TAS между ${LIM.tas[0]} и ${LIM.tas[1]} kt.`,
+    errFl: `FL между ${String(LIM.fl[0]).padStart(3, "0")} и ${LIM.fl[1]}.`,
+    errCoord: "Неразпознати координати.", errOutside: "Точката е далеч извън България.",
+    wpN: "Точка",
+  },
+  en: {
+    title: "Route forecast", warn: "EXPERIMENTAL · NOT FOR OPERATIONAL USE",
+    viewAirports: "Airports", viewRoute: "Route forecast", flight: "Flight",
+    from: "Departure", to: "Destination", etd: "Departure time (UTC)",
+    tas: "Cruise speed (TAS, kt)", fl: "Flight level (FL)",
+    wps: "Waypoints", wpsHint: "click on the map to add a point",
+    wpAddLabel: "or coordinates: 42.70 23.40 · 4242N02324E", add: "Add",
+    calc: "Calculate", remove: "Remove", noWps: "None — direct line between the airports.",
+    note: "The route forecast is experimental and does not replace the official low-level forecasts (GAMET) or a pre-flight meteorological briefing.",
+    footer: "Experimental product for training and research. Map: © OpenStreetMap contributors, OpenTopoMap, Esri. Model: ICON-EU (DWD) via Open-Meteo (CC BY 4.0). Terrain: Open-Meteo Elevation API.",
+    dist: "Distance", time: "Flight time", legs: "Legs", local: "local",
+    resTitle: "Route forecast",
+    xsTitle: "Cross-section and elements along the route", segTitle: "By segment", rawTitle: "Data at the points (for checking)",
+    ovTitle: "Summary", stRed: "ADVERSE", stYel: "CAUTION", stGrn: "NO SIGNIFICANT WEATHER",
+    ovWind: "Mean wind at level", ovComp: "tailwind", ovHead: "headwind", ovDrift: "Largest drift",
+    ovFzl: "Freezing level (lowest)", ovAgl: "Lowest terrain clearance (±10 km)", terWarn: "below 1000 ft above terrain",
+    ovCloud: "In cloud", ovIce: "Icing", ovVis: "Surface visibility", ovNone: "none",
+    ovModels: "Model: ICON-EU (DWD) via Open-Meteo.", yes: "yes", no: "no", lgCloud: "cloud",
+    aglExpl: "Terrain clearance: how many ft the flight is above the highest terrain within a strip ±10 km either side of the track (cruise level only). Below 1000 ft — yellow, below 500 ft — red.", nmFrom: "km",
+    rWind: "wind", rComp: "tailwind kt", rCloud: "in cloud", rIce: "icing", rVisL: "vis at level",
+    rVisS: "surface vis", rAgl: "terrain clearance ft", rT: "T °C", lgRelief: "terrain (own scale)", relief: "terrain", tipWhere: "time, position", tipAlt: "altitude",
+    lgFlight: "flight: no significant / caution / adverse",
+    segPart: "segment", segClimb: "climb", segCruise: "level", segDesc: "descent",
+    lgTer: "terrain on track", lgTerC: "highest ±10 km", lgCloud2: "cloud, 2 models", lgCloud1: "cloud, 1 model",
+    lgFzl: "0 °C", lgPath: "flight", lgIce: "icing",
+    endsTitle: "Airports", dep: "Departure", arr: "Destination", endWind: "wind", endVis: "vis", endCig: "ceiling",
+    endHigh: "high", endNoTable: "The airport table is not available", endOut: "outside the table horizon (12 h)",
+    endStale: "table from", endLink: "Airport table →", endCol: "column",
+    loading: "Downloading data…", sec: "s", limit: "Open-Meteo per-minute limit reached — try again in a minute", failed: "Could not download the data",
+    runInfo: "Calculated", noModel: "no data",
+    thS: "km", thT: "UTC", thPh: "phase", thAlt: "ft", thTer: "terrain ft", thTerC: "terrain ±10 km",
+    thAgl: "above terrain ±10 km", thRHmax: "max RH in column (hPa)", ice: "ice", thComp: "tailwind kt", thDrift: "drift", thFzl: "0 °C ft",
+    thCloud: "in cloud", thIce: "icing", thVisLev: "vis level m", thVisSfc: "sfc vis m (min)",
+    inCloud: "cloud", good: "good", spread: "model difference",
+    thW: "wind", thTemp: "T °C", thRH: "RH %", thCC: "cloud %", thVis: "sfc vis m", thGS: "GS kt",
+    phClimb: "climb", phCruise: "level", phDesc: "desc.",
+    samples: "points", beforeArr: "before arrival", notReached: "Route too short — does not reach",
+    errSame: "Departure and destination are the same.",
+    errEtdPast: "Departure time is in the past.",
+    errEtdFar: `Departure can be up to ${HORIZON_H} h ahead.`,
+    errTas: `TAS between ${LIM.tas[0]} and ${LIM.tas[1]} kt.`,
+    errFl: `FL between ${String(LIM.fl[0]).padStart(3, "0")} and ${LIM.fl[1]}.`,
+    errCoord: "Coordinates not recognised.", errOutside: "The point is far outside Bulgaria.",
+    wpN: "Point",
+  },
+};
+
+// ---------------------------------------------------------------
+// Състояние
+// ---------------------------------------------------------------
+const S = {from: DEF.from, to: DEF.to, etd: null, tas: DEF.tas, fl: DEF.fl, wp: [], lang: "bg"};
+const $ = id => document.getElementById(id);
+const t = k => T[S.lang][k] ?? k;
+
+// ---------------------------------------------------------------
+// Време (всичко в UTC; полето datetime-local показва UTC стойности)
+// ---------------------------------------------------------------
+function defaultEtd() {
+  const d = new Date(Date.now() + 15 * 60000);
+  d.setUTCMinutes(Math.ceil(d.getUTCMinutes() / 5) * 5, 0, 0);
+  return d;
+}
+const pad = n => String(n).padStart(2, "0");
+function toInput(d) {   // Date → "YYYY-MM-DDTHH:MM" в UTC
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+}
+function fromInput(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(s || "");
+  return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5])) : null;
+}
+function toParam(d) { return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}`; }
+function fromParam(s) {
+  const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})$/.exec(s || "");
+  return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5])) : null;
+}
+function hhmmLocal(d) {
+  return d.toLocaleTimeString(S.lang === "bg" ? "bg-BG" : "en-GB", {hour: "2-digit", minute: "2-digit", timeZone: "Europe/Sofia"});
+}
+
+// ---------------------------------------------------------------
+// Координати: "42.70 23.40", "42.70,23.40", "4242N02324E", "424200N0232400E"
+// ---------------------------------------------------------------
+function parseCoord(s) {
+  s = (s || "").trim().toUpperCase();
+  let m = /^(-?\d{1,2}(?:\.\d+)?)[\s,;]+(-?\d{1,3}(?:\.\d+)?)$/.exec(s);
+  if (m) return [+m[1], +m[2]];
+  m = /^(\d{2})(\d{2})(\d{2})?([NS])\s*(\d{3})(\d{2})(\d{2})?([EW])$/.exec(s);
+  if (m) {
+    const lat = (+m[1] + +m[2] / 60 + (m[3] ? +m[3] / 3600 : 0)) * (m[4] === "S" ? -1 : 1);
+    const lon = (+m[5] + +m[6] / 60 + (m[7] ? +m[7] / 3600 : 0)) * (m[8] === "W" ? -1 : 1);
+    return [lat, lon];
+  }
+  return null;
+}
+const inRegion = ([lat, lon]) => lat > 39.5 && lat < 46.5 && lon > 20 && lon < 31;
+const r4 = x => Math.round(x * 1e4) / 1e4;
+function fmtCoord([lat, lon]) {
+  const f = (v, w, p, n) => {
+    const a = Math.abs(v), d = Math.floor(a), mm = Math.round((a - d) * 60);
+    return `${String(mm === 60 ? d + 1 : d).padStart(w, "0")}${pad(mm === 60 ? 0 : mm)}${v >= 0 ? p : n}`;
+  };
+  return `${f(lat, 2, "N", "S")} ${f(lon, 3, "E", "W")}`;
+}
+
+// ---------------------------------------------------------------
+// Геометрия на полета (етап 2)
+// ---------------------------------------------------------------
+// Траектория: дъги по голям кръг между летищата и междинните точки,
+// разделени на точки през ~STEP_KM. Профил: изкачване от летището с
+// CLIMB_FPM при скорост CLIMB_TAS × TAS, крейсерски участък на FL,
+// снижение с DESC_FPM при TAS към летището на кацане. Ако маршрутът е
+// къс, върхът е там, където изкачването и снижението се срещат.
+// FL се приема за височина в ft (без поправка за QNH; разликата е до
+// няколкостотин ft и е под точността на моделите по нивата).
+// Час на всяка точка: по путевата скорост GS = TAS + компонента на вятъра
+// по пътя. windAt(lat, lon, alt_ft, t) идва от етап 3; без него GS = TAS.
+const R_NM = 3440.065, NM_KM = 1.852, D2R = Math.PI / 180;
+const STEP_KM = 25;   // моделите са 7–9 km; по-гъсто само харчи лимита на Open-Meteo
+const CLIMB_FPM = 500, DESC_FPM = 500, CLIMB_TAS = 0.8;
+
+function gcDist(a, b) {
+  const [la1, lo1, la2, lo2] = [a[0], a[1], b[0], b[1]].map(x => x * D2R);
+  const h = Math.sin((la2 - la1) / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin((lo2 - lo1) / 2) ** 2;
+  return 2 * R_NM * Math.asin(Math.sqrt(h));
+}
+function gcBearing(a, b) {   // начален курс (истински), °
+  const [la1, lo1, la2, lo2] = [a[0], a[1], b[0], b[1]].map(x => x * D2R);
+  const y = Math.sin(lo2 - lo1) * Math.cos(la2);
+  const x = Math.cos(la1) * Math.sin(la2) - Math.sin(la1) * Math.cos(la2) * Math.cos(lo2 - lo1);
+  return (Math.atan2(y, x) / D2R + 360) % 360;
+}
+function gcInterp(a, b, f) {   // точка на дял f от дъгата a→b
+  const [la1, lo1, la2, lo2] = [a[0], a[1], b[0], b[1]].map(x => x * D2R);
+  const d = gcDist(a, b) / R_NM;
+  if (d < 1e-9) return [a[0], a[1]];
+  const A = Math.sin((1 - f) * d) / Math.sin(d), B = Math.sin(f * d) / Math.sin(d);
+  const x = A * Math.cos(la1) * Math.cos(lo1) + B * Math.cos(la2) * Math.cos(lo2);
+  const y = A * Math.cos(la1) * Math.sin(lo1) + B * Math.cos(la2) * Math.sin(lo2);
+  const z = A * Math.sin(la1) + B * Math.sin(la2);
+  return [Math.atan2(z, Math.hypot(x, y)) / D2R, Math.atan2(y, x) / D2R];
+}
+
+// Точки по траекторията: [{lat, lon, s (NM от излитането), trk (°), leg}]
+function samplePath(pts) {
+  const out = [];
+  let s0 = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1], d = gcDist(a, b);
+    const n = Math.max(1, Math.ceil(d * NM_KM / STEP_KM));
+    for (let k = (i === 0 ? 0 : 1); k <= n; k++) {
+      const f = k / n, p = gcInterp(a, b, f);
+      const q = gcInterp(a, b, Math.min(1, f + 1e-3)), r = gcInterp(a, b, Math.max(0, f - 1e-3));
+      out.push({lat: p[0], lon: p[1], s: s0 + f * d, trk: gcBearing(r, q), leg: i});
+    }
+    s0 += d;
+  }
+  return out;
+}
+
+// Вертикален профил. alt (ft) по разстояние s (NM).
+// Изкачване и снижение по разстояние при дадени скорости: Δs = Δh / fpm × kt / 60.
+function verticalProfile(total, depElev, arrElev, cruiseFt, tas) {
+  const climbRate = CLIMB_FPM * 60 / (tas * CLIMB_TAS);   // ft на NM
+  const descRate = DESC_FPM * 60 / tas;
+  let top = cruiseFt;
+  let sToc = (top - depElev) / climbRate, sTod = total - (top - arrElev) / descRate;
+  if (sToc > sTod) {   // къс маршрут — не достига FL
+    top = (depElev / climbRate + arrElev / descRate + total) / (1 / climbRate + 1 / descRate);
+    sToc = sTod = (top - depElev) / climbRate;
+  }
+  const alt = s => s <= sToc ? depElev + s * climbRate : s >= sTod ? arrElev + (total - s) * descRate : top;
+  return {top, sToc: Math.max(0, sToc), sTod: Math.min(total, sTod), alt, reached: top >= cruiseFt - 1};
+}
+
+// Цял профил с часовете. windAt → {u, v} (kt) или null.
+function buildFlight(windAt = null) {
+  const A = AIRPORTS[S.from], B = AIRPORTS[S.to];
+  const path = samplePath(routePoints());
+  const total = path[path.length - 1].s;
+  const depFt = A.elev / 0.3048, arrFt = B.elev / 0.3048, cruise = S.fl * 100;
+  const vp = verticalProfile(total, depFt, arrFt, Math.max(cruise, Math.max(depFt, arrFt) + 500), S.tas);
+  let t = S.etd.getTime();
+  path.forEach((p, i) => {
+    p.alt = vp.alt(p.s);
+    p.phase = p.s < vp.sToc - 1e-6 ? "climb" : p.s > vp.sTod + 1e-6 ? "desc" : "cruise";
+    if (i > 0) {
+      const q = path[i - 1], ds = p.s - q.s;
+      const mid = {lat: (p.lat + q.lat) / 2, lon: (p.lon + q.lon) / 2, alt: (p.alt + q.alt) / 2};
+      const tas = S.tas * (q.phase === "climb" ? CLIMB_TAS : 1);
+      let gs = tas;
+      const w = windAt ? windAt(mid.lat, mid.lon, mid.alt, t) : null;
+      if (w) {
+        // Триъгълник на скоростите: GS по пътя при TAS и вятър (u, v)
+        const tr = q.trk * D2R;
+        const along = w.u * Math.sin(tr) + w.v * Math.cos(tr);
+        const cross = -w.u * Math.cos(tr) + w.v * Math.sin(tr);
+        gs = Math.sqrt(Math.max(tas * tas - cross * cross, 1)) + along;
+      }
+      p.gs = Math.max(gs, 20);
+      t += ds / p.gs * 3600000;
+    }
+    p.t = new Date(t);
+  });
+  path[0].gs = path[1] ? path[1].gs : S.tas;
+  return {path, total, vp, eta: path[path.length - 1].t,
+          toc: pointAt(path, vp.sToc), tod: pointAt(path, vp.sTod)};
+}
+function pointAt(path, s) {
+  for (let i = 1; i < path.length; i++) if (path[i].s >= s) {
+    const a = path[i - 1], b = path[i], f = (s - a.s) / ((b.s - a.s) || 1);
+    return {lat: a.lat + f * (b.lat - a.lat), lon: a.lon + f * (b.lon - a.lon), s,
+            t: new Date(a.t.getTime() + f * (b.t - a.t))};
+  }
+  return path[path.length - 1];
+}
+
+// ---------------------------------------------------------------
+// Данни (етап 3): Open-Meteo по точките на траекторията
+// ---------------------------------------------------------------
+// Всеки модел — отделна заявка за всички точки и само за часовете на
+// полета. Нивата, които моделът не дава, идват като null и отпадат.
+// Нивата под земята (p > налягането на земята) отпадат; земята е
+// отделно „ниво“ с T2m, RH2m и вятъра на 10 m.
+// Височината на полета (FL като pressure altitude, ft) → налягане по ISA;
+// стойностите се интерполират между нивата в ln p и линейно във времето.
+const OM = "https://api.open-meteo.com/v1/forecast";
+const OM_ELEV = "https://api.open-meteo.com/v1/elevation";
+// Само ICON-EU: на височина моделите се различават малко, а IFS през Open-Meteo
+// не дава влажност по нивата. Кой модел е по-добър — решава се от архива.
+const MODELS = {icon: "icon_eu"};
+const LEVELS = [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500, 400];
+// Само нужните променливи: Open-Meteo брои всяка точка × (брой променливи / 10)
+// и има лимит 600 на минута. Облакът на нивото е от RH (≥ 95%); височината на
+// нивата за разреза — по ISA.
+const PL_VARS = ["temperature", "relative_humidity", "wind_speed", "wind_direction"];
+const SFC_VARS = ["temperature_2m", "relative_humidity_2m", "wind_speed_10m", "wind_direction_10m",
+  "surface_pressure", "visibility", "cloud_cover_low", "precipitation", "snowfall", "freezing_level_height"];
+const TERRAIN_STEP_KM = 5;
+
+const isaP = ft => 1013.25 * Math.pow(1 - 6.8756e-6 * ft, 5.2559);   // hPa
+const fin = x => typeof x === "number" && Number.isFinite(x);
+const uv = (spd, dir) => [-spd * Math.sin(dir * D2R), -spd * Math.cos(dir * D2R)];
+const dirspd = (u, v) => [(Math.atan2(-u, -v) / D2R + 360) % 360, Math.hypot(u, v)];
+const isoHour = ms => new Date(Math.floor(ms / 3600000) * 3600000).toISOString().slice(0, 16);
+
+const cache = new Map();
+async function getJson(url) {
+  if (cache.has(url)) return cache.get(url);
+  const r = await fetch(url);
+  if (r.status === 429) throw new Error(t("limit"));
+  if (!r.ok) throw new Error(`${r.status} ${(await r.text()).slice(0, 160)}`);
+  const j = await r.json();
+  cache.set(url, j);
+  return j;
+}
+
+// Само нивата до първото над полетното ниво: по-малко данни и по-малко
+// „тежест“ на заявката в лимита на Open-Meteo (броят се точки × променливи).
+// Нивата: до първото над полетното ниво, но поне до 500 hPa (~FL180),
+// за да се виждат в разреза и облаците над полета (средни облаци, от които вали).
+const LEVEL_TOP = 500;
+function flightLevels() {
+  const p = Math.min(isaP(S.fl * 100), LEVEL_TOP + 1);
+  const k = LEVELS.findIndex(l => l < p);
+  return k === -1 ? LEVELS : LEVELS.slice(0, k + 1);
+}
+async function fetchModel(key, pts, t0, t1, only = null) {
+  const q = new URLSearchParams({
+    latitude: pts.map(p => p.lat.toFixed(4)).join(","),
+    longitude: pts.map(p => p.lon.toFixed(4)).join(","),
+    models: MODELS[key],
+    hourly: (only || [...SFC_VARS, ...flightLevels().flatMap(l => PL_VARS.map(v => `${v}_${l}hPa`))]).join(","),
+    start_hour: isoHour(t0), end_hour: isoHour(t1 + 3600000),
+    wind_speed_unit: "kn", timezone: "GMT", timeformat: "unixtime", cell_selection: "nearest",
+  });
+  let j = await getJson(`${OM}?${q}`);
+  if (!Array.isArray(j)) j = [j];
+  return j.map(d => ({t: (d.hourly?.time || []).map(x => x * 1000), h: d.hourly || {}, elev: d.elevation}));
+}
+
+async function fetchElevation(coords) {
+  const out = [];
+  for (let i = 0; i < coords.length; i += 100) {
+    const c = coords.slice(i, i + 100);
+    const q = new URLSearchParams({latitude: c.map(p => p[0].toFixed(4)).join(","),
+                                   longitude: c.map(p => p[1].toFixed(4)).join(",")});
+    const j = await getJson(`${OM_ELEV}?${q}`);
+    out.push(...(j.elevation || []));
+  }
+  return out;
+}
+function destPoint([lat, lon], brg, km) {
+  const d = km / NM_KM / R_NM, b = brg * D2R, la = lat * D2R, lo = lon * D2R;
+  const la2 = Math.asin(Math.sin(la) * Math.cos(d) + Math.cos(la) * Math.sin(d) * Math.cos(b));
+  const lo2 = lo + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(la), Math.cos(d) - Math.sin(la) * Math.sin(la2));
+  return [la2 / D2R, lo2 / D2R];
+}
+// Терен: по пътя през 2 km и в коридор ±5/±10 km през 5 km.
+// Връща {track: [{s, ft}], corridor: [{s, ft}]} (s в NM).
+// Терен по пътя през 3 km (Elevation API). Коридорът ±10 km е от височините,
+// които Open-Meteo връща за точките встрани (заявката за видимост), без отделни заявки.
+async function fetchTerrain(path) {
+  const total = path[path.length - 1].s;
+  const tr = [];
+  for (let s = 0; s <= total + 1e-6; s += TERRAIN_STEP_KM / NM_KM) {
+    const p = pointAtS(path, Math.min(s, total));
+    tr.push({s: Math.min(s, total), lat: p.lat, lon: p.lon});
+  }
+  const elev = await fetchElevation(tr.map(p => [p.lat, p.lon]));
+  return {track: tr.map((p, i) => ({s: p.s, ft: fin(elev[i]) ? elev[i] / 0.3048 : NaN})), corridor: []};
+}
+function pointAtS(path, s) {   // позиция и курс на разстояние s (без час)
+  for (let i = 1; i < path.length; i++) if (path[i].s >= s - 1e-9) {
+    const a = path[i - 1], b = path[i], f = (s - a.s) / ((b.s - a.s) || 1);
+    return {lat: a.lat + f * (b.lat - a.lat), lon: a.lon + f * (b.lon - a.lon), trk: b.trk};
+  }
+  const z = path[path.length - 1];
+  return {lat: z.lat, lon: z.lon, trk: z.trk};
+}
+// Най-високият терен в прозорец ±w NM около s
+function terrainMax(list, s, w) {
+  let m = -Infinity;
+  for (const x of list) if (Math.abs(x.s - s) <= w && fin(x.ft)) m = Math.max(m, x.ft);
+  return Number.isFinite(m) ? m : NaN;
+}
+
+// Стойност на променлива във времето ts (линейно между часовете)
+function tAt(d, key, ts) {
+  const y = d.h[key], t = d.t;
+  if (!y || !t.length) return NaN;
+  let k = t.findIndex(x => x >= ts);
+  if (k === -1) return NaN;
+  if (k === 0) return fin(y[0]) && Math.abs(t[0] - ts) < 60000 ? y[0] : NaN;
+  const a = y[k - 1], b = y[k];
+  if (!fin(a) || !fin(b)) return NaN;
+  return a + (b - a) * (ts - t[k - 1]) / (t[k] - t[k - 1]);
+}
+// Колона към момента ts: [{p, z, T, RH, u, v, cc}], от земята нагоре (p намалява)
+function column(d, ts) {
+  const ps = tAt(d, "surface_pressure", ts);
+  const col = [];
+  if (fin(ps)) {
+    const [u, v] = uv(tAt(d, "wind_speed_10m", ts), tAt(d, "wind_direction_10m", ts));
+    col.push({p: ps, z: d.elev, T: tAt(d, "temperature_2m", ts), RH: tAt(d, "relative_humidity_2m", ts),
+              u, v, cc: NaN, sfc: true});
+  }
+  for (const l of LEVELS) {
+    if (fin(ps) && l >= ps) continue;
+    const g = k => tAt(d, `${k}_${l}hPa`, ts);
+    const T = g("temperature"), RH = g("relative_humidity"), sp = g("wind_speed"), dr = g("wind_direction");
+    if (!fin(T) && !fin(sp)) continue;
+    const [u, v] = fin(sp) && fin(dr) ? uv(sp, dr) : [NaN, NaN];
+    col.push({p: l, z: 44330.8 * (1 - Math.pow(l / 1013.25, 0.190263)), T, RH, u, v, cc: NaN});
+  }
+  return col.sort((a, b) => b.p - a.p);
+}
+// Стойности на височина ft (pressure altitude): интерполация в ln p
+function atAlt(col, ft) {
+  const p = isaP(ft);
+  const out = {p, below: false};
+  if (!col.length) return null;
+  if (p >= col[0].p) {   // на или под земята на модела
+    out.below = p > col[0].p + 5;
+    for (const k of ["T", "RH", "u", "v", "cc"]) out[k] = col[0][k];
+    return out;
+  }
+  for (const k of ["T", "RH", "u", "v", "cc"]) {
+    const lv = col.filter(c => fin(c[k]));
+    out[k] = NaN;
+    for (let i = 0; i < lv.length - 1; i++) {
+      const a = lv[i], b = lv[i + 1];
+      if (p <= a.p && p >= b.p) {
+        const f = Math.log(a.p / p) / Math.log(a.p / b.p);
+        out[k] = a[k] + f * (b[k] - a[k]);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+// Всичко за полета: данни, вятър за путевата скорост, стойности по точките
+async function computeFlight() {
+  const F0 = buildFlight();
+  const t0 = S.etd.getTime() - 3600000;
+  const t1 = Math.max(F0.eta.getTime() * 2 - S.etd.getTime(), F0.eta.getTime() + 3600000);   // запас за насрещен вятър
+  const pts = F0.path;
+  const keys = Object.keys(MODELS);
+  // Встрани (±10 km) — на всяка втора точка и на последната; останалите ползват най-близката
+  const sideIdx = pts.map((_, i) => i).filter(i => i % 2 === 0 || i === pts.length - 1);
+  const sideOf = i => sideIdx.reduce((b, j, n) => Math.abs(j - i) < Math.abs(sideIdx[b] - i) ? n : b, 0);
+  const side = sideIdx.flatMap(i => [90, -90].map(a => { const c = destPoint([pts[i].lat, pts[i].lon], pts[i].trk + a, VIS_SIDE_KM); return {lat: c[0], lon: c[1]}; }));
+  const res = await Promise.allSettled([...keys.map(k => fetchModel(k, pts, t0, t1)), fetchTerrain(pts),
+                                        ...keys.map(k => fetchModel(k, side, t0, t1, ["visibility"]))]);
+  const sideVis = {};
+  keys.forEach((k, i) => { const r = res[keys.length + 1 + i]; if (r.status === "fulfilled") sideVis[k] = r.value; });
+  const data = {}, errors = {};
+  keys.forEach((k, i) => res[i].status === "fulfilled" ? data[k] = res[i].value : errors[k] = String(res[i].reason));
+  const terrain = res[keys.length].status === "fulfilled" ? res[keys.length].value : null;
+  if (!terrain) errors.terrain = String(res[keys.length].reason);
+  // Коридор: височините на точките встрани + терена по пътя
+  if (terrain) {
+    const sv = Object.values(sideVis)[0];
+    if (sv) sideIdx.forEach((i, n) => [sv[2 * n], sv[2 * n + 1]].forEach(d => {
+      if (d && fin(d.elev)) terrain.corridor.push({s: pts[i].s, ft: d.elev / 0.3048});
+    }));
+    terrain.corridor.push(...terrain.track);
+  }
+  if (!Object.keys(data).length) throw new Error(Object.values(errors).join("; "));
+
+  // Вятър за путевата скорост: средно от моделите в най-близката точка
+  const nearest = (lat, lon) => {
+    let b = 0, bd = Infinity;
+    pts.forEach((p, i) => { const d = (p.lat - lat) ** 2 + ((p.lon - lon) * Math.cos(lat * D2R)) ** 2; if (d < bd) { bd = d; b = i; } });
+    return b;
+  };
+  const windAt = (lat, lon, alt, t) => {
+    const i = nearest(lat, lon);
+    let u = 0, v = 0, n = 0;
+    for (const k of keys) {
+      if (!data[k]) continue;
+      const w = atAlt(column(data[k][i], t), alt);
+      if (w && fin(w.u) && fin(w.v)) { u += w.u; v += w.v; n++; }
+    }
+    return n ? {u: u / n, v: v / n} : null;
+  };
+  const F = buildFlight(windAt);
+  F.path.forEach((p, i) => {
+    p.m = {};
+    for (const k of keys) {
+      if (!data[k]) continue;
+      const d = data[k][i], ts = p.t.getTime();
+      const col = column(d, ts);
+      (p.cols = p.cols || {})[k] = col;
+      const a = atAlt(col, p.alt);
+      p.m[k] = a && {...a, vis: tAt(d, "visibility", ts), ccl: tAt(d, "cloud_cover_low", ts),
+                     pr: tAt(d, "precipitation", ts), sn: tAt(d, "snowfall", ts), fzl: tAt(d, "freezing_level_height", ts),
+                     elev: d.elev};
+    }
+    if (terrain) {
+      p.ter = terrainMax(terrain.track, p.s, 1);
+      p.terC = terrainMax(terrain.corridor, p.s, STEP_KM / NM_KM);
+    }
+  });
+  F.path.forEach((p, i) => {
+    const ts = p.t.getTime();
+    const vs = {};
+    const n = sideOf(i);
+    for (const k of keys) if (sideVis[k]) vs[k] = [sideVis[k][2 * n], sideVis[k][2 * n + 1]].map(d => tAt(d, "visibility", ts));
+    p.el = elements(p, vs);
+  });
+  F.terrain = terrain; F.errors = errors; F.data = data;
+  return F;
+}
+
+// ---------------------------------------------------------------
+// Елементи (етап 4)
+// ---------------------------------------------------------------
+// Непрекъснатите величини — теглово средно на моделите (вятър по u/v);
+// разликата между тях е несигурност. Облак на нивото, обледяване и
+// видимост — съгласие: в колко от моделите с данни е изпълнено.
+// Теглата са начални и ще се калибрират от архива.
+const W = {icon: 1};
+const VIS_SIDE_KM = 10;
+const CLOUD_CC = 50, CLOUD_RH = 95;        // в облак: облачност на нивото ≥ 50%, без нея RH ≥ 95%
+// Моделите дават RH спрямо вода. Под 0 °C облакът (лед) е наситен спрямо лед, при
+// RH спрямо вода около 82% при −20 °C — затова за облака под 0 °C се гледа RH спрямо лед.
+// За обледяването остава RH спрямо вода (преохладени капки).
+const esW = T => 6.112 * Math.exp(17.67 * T / (T + 243.5));
+const esI = T => 6.112 * Math.exp(22.46 * T / (T + 272.62));
+const rhCloud = (T, RH) => fin(T) && T < 0 ? RH * esW(T) / esI(T) : RH;
+const ICE_T = [-20, 0], ICE_RH = 90;       // риск от обледяване: 0…−20 °C и (облак или RH ≥ 90%)
+const VIS_THR = [5000, 1500];              // прагове за VFR, m
+const SPREAD_KT = 10, SPREAD_T = 3;        // голяма разлика между моделите
+const isaT = ft => 15 - 1.98 * ft / 1000;
+
+function wmean(vals) {   // {модел: стойност} → средно по W, без NaN
+  let a = 0, w = 0;
+  for (const [k, x] of Object.entries(vals)) if (fin(x) && W[k]) { a += W[k] * x; w += W[k]; }
+  return w ? a / w : NaN;
+}
+// Видимост при валеж (m) по интензитета, mm/h; при сняг по-силно намаление
+function precipVis(pr, snow) {
+  if (!fin(pr) || pr < 0.1) return NaN;
+  if (snow) return pr < 0.5 ? 2000 : pr < 1.5 ? 1000 : 500;
+  return pr < 2.5 ? 6000 : pr < 7.6 ? 3000 : 1500;
+}
+function elements(p, sideVis) {
+  const ks = Object.keys(p.m).filter(k => p.m[k]);
+  const pick = f => Object.fromEntries(ks.map(k => [k, f(p.m[k], k)]));
+  const e = {of: ks.length};
+  if (!ks.length) return e;
+
+  // Вятър на нивото и компонентите по пътя
+  const u = wmean(pick(m => m.u)), v = wmean(pick(m => m.v));
+  if (fin(u) && fin(v)) {
+    const [dir, spd] = dirspd(u, v), tr = p.trk * D2R;
+    const along = u * Math.sin(tr) + v * Math.cos(tr);          // + попътен
+    const cross = u * Math.cos(tr) - v * Math.sin(tr);          // + отляво надясно спрямо пътя
+    const tas = S.tas * (p.phase === "climb" ? CLIMB_TAS : 1);
+    e.wind = {dir, spd, along, cross, drift: Math.asin(Math.max(-1, Math.min(1, cross / tas))) / D2R};
+    const uvs = ks.map(k => [p.m[k].u, p.m[k].v]).filter(([a, b]) => fin(a) && fin(b));
+    if (uvs.length > 1) e.wind.spread = Math.hypot(uvs[0][0] - uvs[1][0], uvs[0][1] - uvs[1][1]);
+  }
+  // Температура, ISA, нулева изотерма
+  e.T = wmean(pick(m => m.T));
+  e.isa = e.T - isaT(p.alt);
+  const Ts = ks.map(k => p.m[k].T).filter(fin);
+  if (Ts.length > 1) e.Tspread = Math.abs(Ts[0] - Ts[1]);
+  e.fzl = wmean(pick(m => m.fzl / 0.3048));                     // ft AMSL
+  // Над терена: на нивото — над най-високото в коридора ±10 km; при изкачване/снижение — над терена по пътя
+  const ter = p.phase === "cruise" ? p.terC : p.ter;
+  e.agl = fin(ter) ? p.alt - ter : NaN;
+
+  // Облак на нивото и обледяване — по модели
+  const inCloud = m => m.below ? false : fin(m.cc) ? m.cc >= CLOUD_CC : fin(m.RH) && rhCloud(m.T, m.RH) >= CLOUD_RH;
+  const icing = m => !m.below && fin(m.T) && m.T <= ICE_T[1] && m.T >= ICE_T[0]
+                      && (inCloud(m) || (fin(m.RH) && m.RH >= ICE_RH));
+  e.cloud = ks.filter(k => inCloud(p.m[k])).length;
+  e.ice = ks.filter(k => icing(p.m[k])).length;
+
+  // Видимост на нивото: облак → 0; валеж → по интензитета; иначе добра
+  const levVis = m => inCloud(m) ? 0 : precipVis(m.pr, (fin(m.T) && m.T < 0.5) || (fin(m.sn) && m.sn > 0));
+  e.visLev = pick(levVis);
+  // Видимост на земята: най-ниската в точката и на ±10 км встрани
+  e.visSfc = pick((m, k) => Math.min(...[m.vis, ...(sideVis[k] || [])].filter(fin)));
+  for (const k of ks) if (!Number.isFinite(e.visSfc[k])) e.visSfc[k] = NaN;
+  for (const thr of VIS_THR) {
+    e[`lev${thr}`] = ks.filter(k => fin(e.visLev[k]) && e.visLev[k] < thr).length;
+    e[`sfc${thr}`] = ks.filter(k => fin(e.visSfc[k]) && e.visSfc[k] < thr).length;
+  }
+  return e;
+}
+
+// ---------------------------------------------------------------
+// Изход (етап 5): обобщение, участъци, вертикален разрез
+// ---------------------------------------------------------------
+const fmtW = w => `${String(Math.round(w.dir / 10) * 10 % 360 || 360).padStart(3, "0")}/${String(Math.round(w.spd)).padStart(2, "0")}`;
+const r100 = x => Math.round(x / 100) * 100;
+const ftOf = h => r100(h).toLocaleString("en-US").replace(/,/g, " ");
+
+// Степен: 2 = червено, 1 = жълто, 0 = нищо
+function sev(e, p) {
+  if (!e || !e.of) return 0;
+  const full = n => n && n === e.of;
+  // Само времето; терена се показва отделно (не е метеорологично условие)
+  if (full(e.cloud) || full(e.ice) || full(e.sfc1500)) return 2;
+  if (e.cloud || e.ice || e.sfc1500 || e.sfc5000) return 1;
+  return 0;
+}
+// Диапазони по разстояние, където условието е изпълнено: [[s0, s1, max n]]
+function ranges(path, f) {
+  const out = [];
+  let cur = null;
+  path.forEach((p, i) => {
+    const n = f(p);
+    if (n) {
+      if (!cur) cur = [p.s, p.s, n, p.t, p.t]; else { cur[1] = p.s; cur[2] = Math.max(cur[2], n); cur[4] = p.t; }
+    } else if (cur) { out.push(cur); cur = null; }
+  });
+  if (cur) out.push(cur);
+  // Прекъсвания под 10 NM се сливат — един случай, а не няколко къса
+  for (let i = out.length - 1; i > 0; i--) {
+    if (out[i][0] - out[i - 1][1] < 10) {
+      out[i - 1][1] = out[i][1]; out[i - 1][2] = Math.max(out[i - 1][2], out[i][2]); out[i - 1][4] = out[i][4];
+      out.splice(i, 1);
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------
+// Летищата в краищата (етап 6): от летищната таблица (table.json)
+// ---------------------------------------------------------------
+// На Pages таблицата е до route.html. Локално (file://) браузърът не
+// чете съседни файлове, затова се пробва и публичният адрес.
+const TABLE_URLS = ["table.json", "https://ilianrvd.github.io/airport-nowcast/table.json"];
+let TABLE = null, tableAt = 0;
+async function loadTable() {
+  if (TABLE && Date.now() - tableAt < 5 * 60000) return TABLE;
+  for (const u of TABLE_URLS.filter(u => location.protocol !== "file:" || u.startsWith("https:"))) {
+    try {
+      const r = await fetch(`${u}?t=${Math.floor(Date.now() / 60000)}`, {cache: "no-store"});
+      if (r.ok) { TABLE = await r.json(); tableAt = Date.now(); return TABLE; }
+    } catch (e) { /* следващият адрес */ }
+  }
+  return null;
+}
+// Колоната на таблицата за момента t: най-близката, ако е в рамките на 45 мин
+function tableCol(T, icao, t) {
+  const a = T && T.airports && T.airports[icao];
+  if (!a) return null;
+  let best = null, bd = Infinity;
+  for (const c of a.cols) {
+    const d = Math.abs(Date.parse(c.time) - t);
+    if (d < bd) { bd = d; best = c; }
+  }
+  return bd <= 45 * 60000 ? best : null;
+}
+// Степен като в летищната таблица: 2 червено, 1 жълто, 0 нищо
+function endSev(c) {
+  if (!c) return 0;
+  const wx = c.wx || "";
+  if ((fin(c.vis_m) && c.vis_m < 1000) || (fin(c.ceiling_ft) && c.ceiling_ft < 200) || /FG|TS|FZ/.test(wx)) return 2;
+  if ((fin(c.vis_m) && c.vis_m < 2000) || (fin(c.ceiling_ft) && c.ceiling_ft < 1500) || (fin(c.gust_kt) && c.gust_kt >= 25)
+      || (c.p_cig1500 || 0) >= 30 || (c.p_lt2000 || 0) >= 30 || (c.p_icing || 0) >= 30) return 1;
+  return 0;
+}
+function endBlock(T, icao, ts, lab) {
+  const c = tableCol(T, icao, ts);
+  const name = `${icao} ${AIRPORTS[icao][S.lang]}`;
+  if (!c) return {sev: 0, html: `<div class="end"><h3>${lab}: ${name} <span>${hhmmUtc(new Date(ts))} UTC</span></h3><span class="hint">${T ? t("endOut") : t("endNoTable")}</span></div>`};
+  const sv = endSev(c);
+  const tag = (x, k) => `<span class="tag ${k}">${x}</span>`;
+  const vis = fin(c.vis_m) ? (c.vis_m >= 10000 ? "≥10 km" : `${c.vis_m} m`) : "—";
+  const visK = fin(c.vis_m) ? (c.vis_m < 1000 ? "c-crit" : c.vis_m < 2000 ? "c-warn" : c.vis_m < 5000 ? "c-info" : "") : "";
+  const cig = fin(c.ceiling_ft) ? `${c.low_cloud || ""} ${c.ceiling_ft} ft` : (c.ceiling_txt || t("endHigh"));
+  const cigK = fin(c.ceiling_ft) ? (c.ceiling_ft < 200 ? "c-crit" : c.ceiling_ft < 1500 ? "c-warn" : c.ceiling_ft < 5000 ? "c-info" : "") : "";
+  const wind = c.wind_dir != null ? `${c.wind_dir === "VRB" ? "VRB" : String(c.wind_dir).padStart(3, "0")}/${pad(c.wind_kt ?? 0)}${c.gust_kt ? "G" + c.gust_kt : ""}` : "—";
+  const pr = [];
+  if (c.p_lt2000) pr.push(`P(&lt;2000 m) ${c.p_lt2000}%`);
+  if (c.p_cig1500) pr.push(`P(${t("endCig")} &lt;1500 ft) ${c.p_cig1500}%`);
+  if (c.p_icing) pr.push(`P(FZ) ${c.p_icing}%`);
+  return {sev: sv, html: `<div class="end"><h3>${lab}: ${name} <span>${hhmmUtc(new Date(ts))} UTC · ${t("endCol")} ${c.lead}</span></h3>`
+    + `<div class="row"><span>${t("endWind")} <b>${wind}</b></span><span>${t("endVis")} ${tag(vis, visK)}</span>`
+    + `<span>${t("endCig")} ${tag(cig, cigK)}</span>${c.wx ? `<span>${tag(c.wx, /FG|TS|FZ/.test(c.wx) ? "c-crit" : "c-info")}</span>` : ""}`
+    + `<span>T/Td <b>${c.t ?? "—"}/${c.td ?? "—"}</b></span></div>`
+    + (pr.length ? `<div class="hint">${pr.join(" · ")}</div>` : "") + `</div>`};
+}
+function drawEnds(F, T) {
+  const d = endBlock(T, S.from, S.etd.getTime(), t("dep")), a = endBlock(T, S.to, F.eta.getTime(), t("arr"));
+  let note = "";
+  if (T && T.created) {
+    const age = (Date.now() - Date.parse(T.created)) / 60000;
+    if (age > 60) note = `<p class="hint" style="margin:6px 0 0">${t("endStale")} ${hhmmUtc(new Date(T.created))} UTC</p>`;
+  }
+  $("ends").innerHTML = `<h2>${t("endsTitle")}</h2>${d.html}${a.html}${note}<p style="margin:8px 0 0;font-size:13px"><a href="index.html">${t("endLink")}</a></p>`;
+  return Math.max(d.sev, a.sev);
+}
+
+function drawResults(F, endSevMax = 0) {
+  const P = F.path, of = Math.max(...P.map(p => (p.el || {}).of || 0));
+  const na = "<span class=na>—</span>";
+  const tagN = (n, crit) => !n ? "" : of === 1 ? `<span class="tag c-crit">${t("yes")}</span>` : `<span class="tag ${n === of ? (crit ? "c-crit" : "c-warn") : "c-warn"}">${n}/${of}</span>`;
+  const nmR = r => `${Math.round(r[0] * NM_KM)}–${Math.round(r[1] * NM_KM)} km (${hhmmUtc(r[3])}–${hhmmUtc(r[4])})`;
+  const listR = (rs) => rs.length ? rs.map(r => `${tagN(r[2], true)} ${nmR(r)}`).join("<br>") : t("ovNone");
+
+  // --- Обобщение
+  const worst = Math.max(endSevMax, ...P.map(p => sev(p.el, p)));
+  const st = [["c-info", t("stGrn")], ["c-warn", t("stYel")], ["c-crit", t("stRed")]][worst];
+  const cr = P.filter(p => p.phase === "cruise" && p.el && p.el.wind);
+  const crW = cr.length ? cr : P.filter(p => p.el && p.el.wind);
+  let ovW = "";
+  if (crW.length) {
+    const u = crW.reduce((a, p) => a + p.el.wind.spd * Math.sin(p.el.wind.dir * D2R), 0) / crW.length;
+    const v = crW.reduce((a, p) => a + p.el.wind.spd * Math.cos(p.el.wind.dir * D2R), 0) / crW.length;
+    const along = crW.reduce((a, p) => a + p.el.wind.along, 0) / crW.length;
+    const dmax = crW.reduce((m, p) => Math.abs(p.el.wind.drift) > Math.abs(m) ? p.el.wind.drift : m, 0);
+    ovW = `<li>${t("ovWind")}: <b>${fmtW({dir: (Math.atan2(u, v) / D2R + 360) % 360, spd: Math.hypot(u, v)})}</b> · `
+      + `${along >= 0 ? t("ovComp") : t("ovHead")} <b>${Math.abs(Math.round(along))} kt</b></li>`
+      + `<li>${t("ovDrift")}: <b>${dmax >= 0 ? "R" : "L"}${Math.abs(Math.round(dmax))}°</b></li>`;
+  }
+  const fz = P.map(p => p.el && p.el.fzl).filter(fin);
+  const agl = cr.map(p => p.el.agl).filter(fin);
+  const min = (F.eta - S.etd) / 60000;
+  $("overall").innerHTML = `<h2>${t("ovTitle")}</h2><span class="ov-st ${st[0]}">${st[1]}</span><ul class="ov">`
+    + `<li>${S.from} ${hhmmUtc(S.etd)} → ${S.to} <b>${hhmmUtc(F.eta)} UTC</b> · ${Math.floor(min / 60)}:${pad(Math.round(min % 60))} · FL${String(S.fl).padStart(3, "0")}</li>`
+    + ovW
+    + `<li>${t("ovFzl")}: <b>${fz.length ? ftOf(Math.min(...fz)) + " ft" : "—"}</b></li>`
+    + `<li>${t("ovAgl")}: <b>${agl.length ? ftOf(Math.min(...agl)) + " ft" : "—"}</b>`
+    + (() => { const rs = ranges(P, p => p.phase === "cruise" && p.el && fin(p.el.agl) && p.el.agl < 1000 ? 1 : 0);
+               return rs.length ? `<br><span class="tag c-crit">${t("terWarn")}</span> ${rs.map(nmR).join(", ")}` : ""; })()
+    + `</li>`
+    + `<li>${t("ovCloud")}:<br>${listR(ranges(P, p => p.el && p.el.cloud))}</li>`
+    + `<li>${t("ovIce")}:<br>${listR(ranges(P, p => p.el && p.el.ice))}</li>`
+    + `<li>${t("ovVis")} &lt; 1500 m:<br>${listR(ranges(P, p => p.el && p.el.sfc1500))}</li>`
+    + `<li>${t("ovVis")} &lt; 5000 m:<br>${listR(ranges(P, p => p.el && p.el.sfc5000))}</li>`
+    + `</ul><p class="hint" style="margin:8px 0 0">${t("ovModels")}</p>`;
+
+  drawChart(F);
+}
+
+// ---------------------------------------------------------------
+// Разрез + лента с елементите — една графика с обща ос по разстоянието
+// ---------------------------------------------------------------
+const C_CLOUD = "#2E9E5B", C_ICE = "#2563EB", C_FZL = "#B45309";
+const SEV_COL = ["#14181F", "#D97706", "#C0392B"];
+const CELL = ["#F4F6F8", "#FBE3B6", "#F4C7C1", "#DCE8F7"];   // нищо, жълто, червено, синьо (инфо)
+const CELL_INK = ["#9AA3AF", "#5C3A00", "#6E160C", "#163A6B"];
+
+// Вятърна стрелка (barb): тояжката сочи откъдето духа, перата — в края ѝ
+function barb(x, y, dir, spd, L = 22) {
+  const r = dir * D2R, dx = Math.sin(r), dy = -Math.cos(r);
+  if (spd < 2.5) return `<circle cx="${x}" cy="${y}" r="3.5" fill="none"/>`;
+  const x0 = x - dx * L / 2, y0 = y - dy * L / 2, x2 = x + dx * L / 2, y2 = y + dy * L / 2;
+  let g = `<line x1="${x0.toFixed(1)}" y1="${y0.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"/>`;
+  let v = Math.round(spd / 5) * 5, pos = 0;
+  const px = -dy, py = dx, at = k => [x2 - dx * k, y2 - dy * k];
+  while (v >= 50) { const [a, b] = at(pos), [c, d] = at(pos + 5);
+    g += `<polygon points="${a.toFixed(1)},${b.toFixed(1)} ${(a + px * 9).toFixed(1)},${(b + py * 9).toFixed(1)} ${c.toFixed(1)},${d.toFixed(1)}" fill="currentColor" stroke="none"/>`;
+    v -= 50; pos += 7; }
+  while (v >= 10) { const [a, b] = at(pos);
+    g += `<line x1="${a.toFixed(1)}" y1="${b.toFixed(1)}" x2="${(a + px * 9 + dx * 2.5).toFixed(1)}" y2="${(b + py * 9 + dy * 2.5).toFixed(1)}"/>`;
+    v -= 10; pos += 3.5; }
+  if (v >= 5) { if (!pos) pos = 3.5; const [a, b] = at(pos);
+    g += `<line x1="${a.toFixed(1)}" y1="${b.toFixed(1)}" x2="${(a + px * 4.5 + dx * 1.2).toFixed(1)}" y2="${(b + py * 4.5 + dy * 1.2).toFixed(1)}"/>`; }
+  return g;
+}
+// Гладка крива през точки (Catmull-Rom → Bézier)
+function smooth(pts) {
+  if (pts.length < 3) return pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
+  let d = `M${pts[0][0].toFixed(1)},${pts[0][1].toFixed(1)}`;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(pts.length - 1, i + 2)];
+    const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6], c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+    d += ` C${c1[0].toFixed(1)},${c1[1].toFixed(1)} ${c2[0].toFixed(1)},${c2[1].toFixed(1)} ${p2[0].toFixed(1)},${p2[1].toFixed(1)}`;
+  }
+  return d;
+}
+
+function drawChart(F) {
+  const P = F.path, total = F.total * NM_KM;            // km
+  const of = Math.max(...P.map(p => (p.el || {}).of || 0));
+  const Wd = 1100, mL = 128, mR = 18;
+  const H_SEC = 300, H_TER = Math.round(H_SEC * 0.15 / 0.85), H_AX = 40, ROW = 26, GAP = 2;
+  const ROWS = ["rWind", "rComp", "rCloud", "rIce", "rVisL", "rVisS", "rAgl", "rT"];
+  const yTop = 26, ySecB = yTop + H_SEC, yTerB = ySecB + H_TER, yAx = yTerB, yStrip = yAx + H_AX;
+  const Ht = yStrip + ROWS.length * ROW + 6;
+  const pw = Wd - mL - mR;
+  const X = k => mL + k / total * pw;
+  const yMax = Math.max(15000, Math.ceil((F.vp.top + 3000) / 1000) * 1000);
+  const Y = ft => ySecB - Math.max(0, Math.min(ft, yMax)) / yMax * H_SEC;
+  const km = p => p.s * NM_KM;
+  const xa = i => X(i ? (km(P[i - 1]) + km(P[i])) / 2 : 0), xb = i => X(i < P.length - 1 ? (km(P[i + 1]) + km(P[i])) / 2 : total);
+  const defs = `<defs>
+    <linearGradient id="g-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#EEF3FA"/><stop offset="1" stop-color="#FBFCFD"/></linearGradient>
+    <linearGradient id="g-ter" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#CDBB9C"/><stop offset="1" stop-color="#EDE5D7"/></linearGradient>
+    <filter id="f-cloud" x="-5%" y="-20%" width="110%" height="140%"><feGaussianBlur stdDeviation="5"/></filter>
+    <clipPath id="c-sec"><rect x="${mL}" y="${yTop}" width="${pw}" height="${H_SEC}"/></clipPath>
+  </defs>`;
+  let g = `<rect x="${mL}" y="${yTop}" width="${pw}" height="${H_SEC}" fill="url(#g-sky)" rx="6"/>`;
+
+  // мрежа по височина (тънка, плътна, отдръпната)
+  const stepFt = yMax > 12000 ? 2000 : 1000;
+  for (let ft = 0; ft <= yMax; ft += stepFt) {
+    if (ft) g += `<line x1="${mL}" x2="${Wd - mR}" y1="${Y(ft)}" y2="${Y(ft)}" stroke="#E3E8EF" stroke-width="1"/>`;
+    g += `<text x="${mL - 10}" y="${Y(ft) + 4}" text-anchor="end" class="ax">${ft ? "FL" + String(ft / 100).padStart(3, "0") : "SFC"}</text>`;
+  }
+
+  // облак: клетки по нивата, размити — меки облачни маси, прозрачни
+  let cl1 = "", cl2 = "";
+  P.forEach((p, i) => {
+    const lay = {};
+    for (const k of Object.keys(p.cols || {})) {
+      const lv = p.cols[k].filter(c => !c.sfc && fin(c.z));
+      lv.forEach((c, j) => {
+        if (!(fin(c.RH) && rhCloud(c.T, c.RH) >= CLOUD_RH)) return;
+        const zf = c.z / 0.3048;
+        const lo = j ? (lv[j - 1].z / 0.3048 + zf) / 2 : zf - 500, hi = j < lv.length - 1 ? (lv[j + 1].z / 0.3048 + zf) / 2 : zf + 500;
+        (lay[c.p] = lay[c.p] || {n: 0, lo, hi}).n++;
+      });
+    }
+    for (const Lr of Object.values(lay)) {
+      if (Lr.lo >= yMax) continue;
+      const r = `<rect x="${(xa(i) - 2).toFixed(1)}" y="${Y(Lr.hi).toFixed(1)}" width="${(xb(i) - xa(i) + 4).toFixed(1)}" height="${(Y(Lr.lo) - Y(Lr.hi)).toFixed(1)}" rx="8"/>`;
+      if (Lr.n >= 2 || Object.keys(MODELS).length === 1) cl2 += r; else cl1 += r;
+    }
+  });
+  g += `<g clip-path="url(#c-sec)" fill="${C_CLOUD}"><g opacity=".22" filter="url(#f-cloud)">${cl1}</g><g opacity="${Object.keys(MODELS).length === 1 ? .32 : .45}" filter="url(#f-cloud)">${cl2}</g></g>`;
+
+  // нулева изотерма с етикет-хапче
+  const fzp = P.filter(p => p.el && fin(p.el.fzl) && p.el.fzl <= yMax).map(p => [X(km(p)), Y(p.el.fzl)]);
+  if (fzp.length > 1) {
+    const lp = fzp[fzp.length - 1];
+    g += `<path d="${smooth(fzp)}" fill="none" stroke="${C_FZL}" stroke-width="1.5" stroke-dasharray="6 4"/>`
+      + `<g transform="translate(${(lp[0] - 40).toFixed(1)},${(lp[1] - 9).toFixed(1)})"><rect width="36" height="18" rx="9" fill="#fff" stroke="${C_FZL}"/><text x="18" y="12.5" text-anchor="middle" fill="${C_FZL}" font-weight="600">0 °C</text></g>`;
+  }
+
+  // обледяване: синя прозрачна ивица по полета
+  P.forEach((p, i) => {
+    if (!i || !p.el || !p.el.ice) return;
+    const q = P[i - 1];
+    g += `<line x1="${X(km(q)).toFixed(1)}" y1="${Y(q.alt).toFixed(1)}" x2="${X(km(p)).toFixed(1)}" y2="${Y(p.alt).toFixed(1)}" stroke="${C_ICE}" stroke-width="14" stroke-opacity="${p.el.ice === p.el.of ? .45 : .22}" stroke-linecap="round"/>`;
+  });
+  // полет: бял ореол + линия, оцветена по оценката
+  const fp = P.map(p => `${X(km(p)).toFixed(1)},${Y(p.alt).toFixed(1)}`);
+  g += `<polyline points="${fp.join(" ")}" fill="none" stroke="#fff" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>`;
+  P.forEach((p, i) => {
+    if (!i) return;
+    const q = P[i - 1], sv = Math.max(sev(p.el, p), sev(q.el, q));
+    g += `<line x1="${X(km(q)).toFixed(1)}" y1="${Y(q.alt).toFixed(1)}" x2="${X(km(p)).toFixed(1)}" y2="${Y(p.alt).toFixed(1)}" stroke="${SEV_COL[sv]}" stroke-width="3" stroke-linecap="round"/>`;
+  });
+  // TOC / TOD
+  for (const [lab, s] of [["TOC", F.vp.sToc], ["TOD", F.vp.sTod]]) {
+    const x = X(s * NM_KM), y = Y(F.vp.top);
+    g += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4" fill="#fff" stroke="#14181F" stroke-width="2"/>`
+      + `<text x="${x.toFixed(1)}" y="${(y - 10).toFixed(1)}" text-anchor="middle" class="ax" font-weight="600" fill="#14181F">${lab}</text>`;
+  }
+
+  // летищата и междинните точки: вертикали и хапчета отгоре
+  const rp = routePoints();
+  let acc = 0;
+  const names = [[0, S.from]];
+  for (let j = 0; j < rp.length - 1; j++) { acc += gcDist(rp[j], rp[j + 1]); names.push([acc * NM_KM, j < rp.length - 2 ? String(j + 1) : S.to]); }
+  names.forEach(([k, n], j) => {
+    const x = X(k), w = n.length > 2 ? 40 : 20;
+    const bx = Math.max(mL, Math.min(Wd - mR - w, x - w / 2));
+    g += `<line x1="${x}" x2="${x}" y1="${yTop}" y2="${ySecB}" stroke="#C9D2DE" stroke-width="1"/>`
+      + `<g transform="translate(${bx.toFixed(1)},4)"><rect width="${w}" height="18" rx="4" fill="${n.length > 2 ? "#121821" : "#fff"}" stroke="#121821"/>`
+      + `<text x="${w / 2}" y="12.5" text-anchor="middle" font-weight="600" fill="${n.length > 2 ? "#fff" : "#121821"}">${n}</text></g>`;
+  });
+
+  // релеф: 15% от височината, собствена скала, мек градиент
+  if (F.terrain) {
+    const tr = F.terrain.track.filter(x => fin(x.ft));
+    const tMax = Math.max(1, ...tr.map(x => x.ft));
+    const YT = ft => yTerB - ft / tMax * (H_TER - 6);
+    const tp = tr.map(x => [X(x.s * NM_KM), YT(x.ft)]);
+    g += `<path d="${smooth(tp)} L${X(total)},${yTerB} L${X(0)},${yTerB} Z" fill="url(#g-ter)"/>`
+      + `<path d="${smooth(tp)}" fill="none" stroke="#A8916C" stroke-width="1"/>`
+      + `<text x="${mL - 10}" y="${yTerB - 4}" text-anchor="end" class="ax" fill="#8A7A62">${t("relief")} ${Math.round(tMax * 0.3048)} m</text>`;
+  }
+  g += `<line x1="${mL}" x2="${Wd - mR}" y1="${ySecB}" y2="${ySecB}" stroke="#C9D2DE"/>`;
+
+  // ос: km и UTC
+  const stepKm = total > 300 ? 50 : total > 120 ? 25 : 10;
+  for (let k = 0; k <= total + 1e-6; k += stepKm) {
+    const pt = pointAt(P, Math.min(k, total) / NM_KM), x = X(k), anc = k === 0 ? "start" : "middle";
+    g += `<line x1="${x}" x2="${x}" y1="${yAx}" y2="${yAx + 5}" stroke="#9AA3AF"/>`
+      + `<text x="${x + (k === 0 ? 2 : 0)}" y="${yAx + 17}" text-anchor="${anc}" class="ax" fill="#374151">${Math.round(k)}</text>`
+      + `<text x="${x + (k === 0 ? 2 : 0)}" y="${yAx + 31}" text-anchor="${anc}" class="ax">${hhmmUtc(pt.t)}</text>`;
+  }
+  g += `<text x="${mL - 10}" y="${yAx + 17}" text-anchor="end" class="ax">km</text><text x="${mL - 10}" y="${yAx + 31}" text-anchor="end" class="ax">UTC</text>`;
+
+  // лента: колони по групи точки (≥ 52 px), клетки с 2 px разстояние
+  // равни колони по km (около 84 px); във всяка — точките в нея, иначе най-близката
+  const nCol = Math.max(1, Math.min(P.length, Math.floor(pw / 84)));
+  const cols = [];
+  for (let j = 0; j < nCol; j++) {
+    const k0 = j * total / nCol, k1 = (j + 1) * total / nCol, kc = (k0 + k1) / 2;
+    let c = P.map((p, i) => [p, i]).filter(([p]) => km(p) >= k0 - 1e-6 && km(p) < k1 + (j === nCol - 1 ? 1e-6 : 0));
+    if (!c.length) c = [P.map((p, i) => [p, i]).reduce((a, b) => Math.abs(km(b[0]) - kc) < Math.abs(km(a[0]) - kc) ? b : a)];
+    c.k0 = k0; c.k1 = k1;
+    cols.push(c);
+  }
+  const vmin = o => { const v = Object.values(o || {}).filter(fin); return v.length ? Math.min(...v) : NaN; };
+  let strip = "";
+  ROWS.forEach((key, r) => {
+    const y = yStrip + r * ROW;
+    strip += `<text x="${mL - 10}" y="${y + ROW / 2 + 4}" text-anchor="end" class="lab">${t(key)}</text>`;
+    cols.forEach(c => {
+      const E = c.map(([p]) => p.el).filter(e => e && e.of);
+      const x0 = X(c.k0) + GAP / 2, x1 = X(c.k1) - GAP / 2;
+      let txt = "—", bg = 0, extra = "";
+      if (E.length) {
+        if (key === "rWind" || key === "rComp") {
+          const ws = E.filter(e => e.wind);
+          if (ws.length) {
+            const u = ws.reduce((a, e) => a + e.wind.spd * Math.sin(e.wind.dir * D2R), 0) / ws.length;
+            const v = ws.reduce((a, e) => a + e.wind.spd * Math.cos(e.wind.dir * D2R), 0) / ws.length;
+            const al = ws.reduce((a, e) => a + e.wind.along, 0) / ws.length;
+            const W1 = {dir: (Math.atan2(u, v) / D2R + 360) % 360, spd: Math.hypot(u, v)};
+            if (key === "rWind") {
+              txt = fmtW(W1); bg = 4;
+              extra = `<g color="#14181F" stroke="#14181F" stroke-width="1.2" fill="none">${barb(x0 + 12, y + ROW / 2, W1.dir, W1.spd, 14)}</g>`;
+            } else { txt = (al >= 0 ? "+" : "−") + Math.abs(Math.round(al)); bg = al <= -15 ? 1 : 0; }
+          }
+        } else if (key === "rCloud" || key === "rIce") {
+          const n = Math.max(...E.map(e => key === "rCloud" ? e.cloud : e.ice));
+          txt = n ? (of === 1 ? t("yes") : `${n}/${of}`) : "—"; bg = n ? (n === of ? 2 : 1) : 0;
+        } else if (key === "rVisL") {
+          const v = Math.min(Infinity, ...E.map(e => vmin(e.visLev)).filter(fin));
+          txt = v === 0 ? t("inCloud") : Number.isFinite(v) ? String(v) : "✓";
+          bg = v < 1500 ? 2 : v < 5000 ? 1 : 0;
+        } else if (key === "rVisS") {
+          const v = Math.min(Infinity, ...E.map(e => vmin(e.visSfc)).filter(fin));
+          txt = Number.isFinite(v) ? (v >= 10000 ? "10 km+" : String(Math.round(v / 100) * 100)) : "—";
+          bg = v < 1500 ? 2 : v < 5000 ? 1 : 0;
+        } else if (key === "rAgl") {
+          const cr = c.filter(([p]) => p.phase === "cruise" && p.el && fin(p.el.agl));
+          if (cr.length) { const a = Math.min(...cr.map(([p]) => p.el.agl)); txt = String(Math.round(a / 100) * 100); bg = a < 500 ? 2 : a < 1000 ? 1 : 0; }
+        } else if (key === "rT") {
+          const T = E.map(e => e.T).filter(fin);
+          if (T.length) { const m = Math.round(T.reduce((a, b) => a + b, 0) / T.length); txt = m === 0 ? "0" : (m > 0 ? "+" : "−") + Math.abs(m); bg = m <= 0 && m >= -20 ? 3 : 0; }
+        }
+      }
+      const fill = bg === 4 ? "#fff" : CELL[bg], ink = bg === 4 ? "#14181F" : txt === "—" || txt === "✓" ? "#9AA3AF" : bg ? CELL_INK[bg] : "#14181F";
+      const tx = extra ? (x0 + x1) / 2 + 9 : (x0 + x1) / 2;
+      strip += `<rect x="${x0.toFixed(1)}" y="${y + GAP / 2}" width="${Math.max(0, x1 - x0).toFixed(1)}" height="${ROW - GAP}" rx="3" fill="${fill}"${bg === 4 ? ' stroke="#E3E8EF"' : ""}/>`
+        + extra + `<text x="${tx.toFixed(1)}" y="${y + ROW / 2 + 4}" text-anchor="middle" fill="${ink}" class="val">${txt}</text>`;
+    });
+  });
+
+  // слой за посочване: вертикала + подсказка
+  const hover = `<line id="xs-cross" x1="0" x2="0" y1="${yTop}" y2="${Ht - 4}" stroke="#14181F" stroke-width="1" opacity="0" pointer-events="none"/>`
+    + `<circle id="xs-dot" r="5" fill="#fff" stroke="#14181F" stroke-width="2" opacity="0" pointer-events="none"/>`
+    + `<rect id="xs-hit" x="${mL}" y="${yTop}" width="${pw}" height="${Ht - yTop}" fill="transparent"/>`;
+
+  $("xs").innerHTML = `<div class="xs-box"><svg viewBox="0 0 ${Wd} ${Ht}" role="img" aria-label="${t("xsTitle")}">
+    <style>text{font-feature-settings:"locl" 0}.ax{font:11px 'IBM Plex Mono',monospace;fill:#6B7280}.lab{font:500 12px 'IBM Plex Sans',sans-serif;fill:#374151}.val{font:500 11.5px 'IBM Plex Mono',monospace}text{font-family:'IBM Plex Mono',monospace;font-size:11px}</style>
+    ${defs}${g}${strip}${hover}</svg><div class="xs-tip" id="xs-tip" hidden></div></div>`;
+  $("xs-leg").innerHTML = (of > 1 ? `<span><i style="background:${C_CLOUD};opacity:.45;border-radius:6px"></i>${t("lgCloud2")}</span>`
+    + `<span><i style="background:${C_CLOUD};opacity:.22;border-radius:6px"></i>${t("lgCloud1")}</span>`
+    : `<span><i style="background:${C_CLOUD};opacity:.3;border-radius:6px"></i>${t("lgCloud")}</span>`)
+    + `<span><i style="background:${C_ICE};opacity:.45;height:8px"></i>${t("lgIce")}</span>`
+    + `<span><i class="ln" style="border-top-color:${C_FZL};border-top-style:dashed"></i>${t("lgFzl")}</span>`
+    + `<span><i class="ln" style="border-top-color:${SEV_COL[0]};border-top-width:3px"></i><i class="ln" style="border-top-color:${SEV_COL[1]};border-top-width:3px"></i><i class="ln" style="border-top-color:${SEV_COL[2]};border-top-width:3px"></i>${t("lgFlight")}</span>`
+    + `<span><i style="background:linear-gradient(#CDBB9C,#EDE5D7)"></i>${t("lgRelief")}</span>`
+    + `<p class="hint" style="flex-basis:100%;margin:2px 0 0">${t("aglExpl")}</p>`;
+
+  // посочване: най-близката точка по x
+  const svg = $("xs").querySelector("svg"), tip = $("xs-tip"), cross = $("xs-cross"), dot = $("xs-dot");
+  const move = ev => {
+    const r = svg.getBoundingClientRect(), sx = (ev.clientX - r.left) / r.width * Wd;
+    let bi = 0, bd = Infinity;
+    P.forEach((p, i) => { const d = Math.abs(X(km(p)) - sx); if (d < bd) { bd = d; bi = i; } });
+    const p = P[bi], e = p.el || {}, x = X(km(p));
+    cross.setAttribute("x1", x); cross.setAttribute("x2", x); cross.setAttribute("opacity", ".35");
+    dot.setAttribute("cx", x); dot.setAttribute("cy", Y(p.alt)); dot.setAttribute("opacity", "1");
+    const rows = [];
+    const add = (k, v) => rows.push(`<div><b>${v}</b><span>${k}</span></div>`);
+    add(t("tipWhere"), `${hhmmUtc(p.t)} UTC · ${Math.round(km(p))} km`);
+    add(t("tipAlt"), `${ftOf(p.alt)} ft`);
+    if (e.wind) add(t("rWind"), `${fmtW(e.wind)} · ${(e.wind.along >= 0 ? "+" : "−") + Math.abs(Math.round(e.wind.along))} kt`);
+    if (fin(e.T)) add("T / ISA", `${e.T.toFixed(0)} °C / ${(e.isa >= 0 ? "+" : "−") + Math.abs(Math.round(e.isa))}`);
+    const rh = Object.entries(p.m || {}).filter(([, m]) => m && fin(m.RH)).map(([k, m]) => `${k.toUpperCase()} ${Math.round(m.RH)}%`);
+    if (rh.length) add("RH", rh.join(" · "));
+    const yn = n => !e.of ? "—" : e.of === 1 ? (n ? t("yes") : t("no")) : `${n || 0}/${e.of}`;
+    add(t("rCloud"), yn(e.cloud));
+    add(t("rIce"), yn(e.ice));
+    const vs = vmin(e.visSfc);
+    if (fin(vs)) add(t("rVisS"), `${Math.round(vs)} m`);
+    if (fin(e.fzl)) add("0 °C", `${ftOf(e.fzl)} ft`);
+    if (p.phase === "cruise" && fin(e.agl)) add(t("rAgl"), `${ftOf(e.agl)}`);
+    tip.innerHTML = rows.join("");
+    tip.hidden = false;
+    const bx = r.left + x / Wd * r.width, box = $("xs").getBoundingClientRect();
+    const left = bx - box.left + $("xs").scrollLeft;
+    tip.style.left = `${Math.min(left + 14, $("xs").scrollWidth - tip.offsetWidth - 4)}px`;
+    if (left + 14 + tip.offsetWidth > $("xs").scrollWidth - 4) tip.style.left = `${Math.max(4, left - tip.offsetWidth - 14)}px`;
+    tip.style.top = `${(ev.clientY - box.top) + 12}px`;
+  };
+  const hit = $("xs-hit");
+  hit.addEventListener("pointermove", move);
+  hit.addEventListener("pointerdown", move);
+  hit.addEventListener("pointerleave", () => { tip.hidden = true; cross.setAttribute("opacity", "0"); dot.setAttribute("opacity", "0"); });
+}
+
+// Временен изглед за проверка (етапи 3–4); заменя се в етап 5
+function drawData(F) {
+  const na = "<span class=na>—</span>";
+  const r0 = x => fin(x) ? Math.round(x) : na;
+  const agree = (n, of, crit) => !of || !n ? `<span class=na>0/${of || 0}</span>`
+    : `<span style="background:${n === of ? (crit ? "#F4C7C1" : "#FBE3B6") : "#FBE3B6"};padding:0 4px;border-radius:3px">${n}/${of}</span>`;
+  const ph = {climb: t("phClimb"), cruise: t("phCruise"), desc: t("phDesc")};
+  const vmin = o => { const v = Object.values(o || {}).filter(fin); return v.length ? Math.min(...v) : NaN; };
+  let h = `<table class="d"><thead><tr><th>${t("thS")}</th><th>${t("thT")}</th><th>${t("thPh")}</th><th>${t("thAlt")}</th>`
+    + `<th>${t("thAgl")}</th><th>${t("thGS")}</th><th>${t("thW")}</th><th>${t("thComp")}</th><th>${t("thDrift")}</th>`
+    + `<th>${t("thTemp")}</th><th>ISA</th><th>${t("thFzl")}</th><th>${t("thCloud")}</th><th>${t("thIce")}</th>`
+    + `<th>${t("thVisLev")}</th><th>${t("thVisSfc")}</th><th>&lt;5000</th><th>&lt;1500</th><th>RH ICON</th><th>RH IFS</th><th>${t("thRHmax")}</th></tr></thead><tbody>`;
+  for (const p of F.path) {
+    const e = p.el || {};
+    const w = e.wind;
+    const unc = w && fin(w.spread) && w.spread >= SPREAD_KT ? ` <span title="${t("spread")}">±${Math.round(w.spread)}</span>` : "";
+    const lev = vmin(e.visLev);
+    h += `<tr class="${p.phase}"><td>${Math.round(p.s * NM_KM)}</td><td>${hhmmUtc(p.t)}</td><td class="ph">${ph[p.phase]}</td>`
+      + `<td>${Math.round(p.alt / 100) * 100}</td><td>${fin(e.agl) ? (e.agl < 1000 && p.phase === "cruise" ? `<b style="color:#6E160C">${Math.round(e.agl / 100) * 100}</b>` : Math.round(e.agl / 100) * 100) : na}</td>`
+      + `<td>${r0(p.gs)}</td>`
+      + `<td>${w ? `${String(Math.round(w.dir / 10) * 10 % 360 || 360).padStart(3, "0")}/${String(Math.round(w.spd)).padStart(2, "0")}${unc}` : na}</td>`
+      + `<td>${w ? (w.along >= 0 ? "+" : "−") + Math.abs(Math.round(w.along)) : na}</td>`
+      + `<td>${w ? (w.drift >= 0 ? "R" : "L") + Math.abs(Math.round(w.drift)) + "°" : na}</td>`
+      + `<td>${fin(e.T) ? e.T.toFixed(0) : na}${fin(e.Tspread) && e.Tspread >= SPREAD_T ? ` <span title="${t("spread")}">±${Math.round(e.Tspread)}</span>` : ""}</td>`
+      + `<td>${fin(e.isa) ? (e.isa >= 0 ? "+" : "−") + Math.abs(Math.round(e.isa)) : na}</td>`
+      + `<td>${fin(e.fzl) ? (p.alt >= e.fzl ? `<b>${Math.round(e.fzl / 100) * 100}</b>` : Math.round(e.fzl / 100) * 100) : na}</td>`
+      + `<td>${agree(e.cloud, e.of, true)}</td><td>${agree(e.ice, e.of, true)}</td>`
+      + `<td>${fin(lev) ? (lev === 0 ? t("inCloud") : Math.round(lev)) : t("good")}</td>`
+      + `<td>${r0(vmin(e.visSfc))}</td><td>${agree(e.sfc5000, e.of, false)}</td><td>${agree(e.sfc1500, e.of, true)}</td>`
+      + `<td>${r0((p.m.icon || {}).RH)}</td><td>${r0((p.m.ifs || {}).RH)}</td>`
+      + `<td>${(() => { const c = Object.values(p.cols || {}).flatMap(col => col.filter(x => !x.sfc && fin(x.RH)));
+                         if (!c.length) return na; const m = c.reduce((a, b) => rhCloud(b.T, b.RH) > rhCloud(a.T, a.RH) ? b : a);
+                         return `${Math.round(m.RH)} (${t("ice")} ${Math.round(rhCloud(m.T, m.RH))}) @${m.p}, ${Math.round(m.T)}°`; })()}</td></tr>`;
+  }
+  $("tw").innerHTML = h + "</tbody></table>";
+}
+
+// Ограничение на бутона: едно изчисление на COOLDOWN_S секунди (и след
+// презареждане — пази се в браузъра), за да не се изчерпва лимитът на Open-Meteo.
+const COOLDOWN_S = 60;
+let cdTimer = null;
+function cooldownLeft() {
+  let until = 0;
+  try { until = +localStorage.getItem("route_cd") || 0; } catch (e) {}
+  return Math.max(0, Math.ceil((until - Date.now()) / 1000));
+}
+function startCooldown(sec = COOLDOWN_S) {
+  try { localStorage.setItem("route_cd", Date.now() + sec * 1000); } catch (e) {}
+  tickCooldown();
+}
+function tickCooldown() {
+  clearTimeout(cdTimer);
+  const left = cooldownLeft();
+  $("go").disabled = left > 0;
+  $("go").textContent = left > 0 ? `${t("calc")} (${left} ${t("sec")})` : t("calc");
+  if (left > 0) cdTimer = setTimeout(tickCooldown, 1000);
+}
+
+let calcSeq = 0;
+async function calculate() {
+  if (!validate() || cooldownLeft() > 0) return;
+  startCooldown();
+  const seq = ++calcSeq;
+  $("res").hidden = false;
+  $("status").className = "status";
+  $("status").textContent = t("loading");
+  $("go").disabled = true;
+  try {
+    const [F, T] = await Promise.all([computeFlight(), loadTable()]);
+    if (seq !== calcSeq) return;
+    const errs = Object.entries(F.errors).map(([k, e]) => `${k.toUpperCase()}: ${t("noModel")} (${e})`);
+    const min = (F.eta - S.etd) / 60000;
+    $("status").textContent = `${t("runInfo")} ${hhmmUtc(new Date())} UTC · ${t("time")} ${Math.floor(min / 60)}:${pad(Math.round(min % 60))} · ETA ${hhmmUtc(F.eta)} UTC`
+      + (errs.length ? ` · ${errs.join(" · ")}` : "");
+    drawData(F);
+    drawResults(F, drawEnds(F, T));
+    drawSummary(true, F);
+  } catch (e) {
+    if (/429|лимит|limit/i.test(e.message)) startCooldown();
+    if (seq !== calcSeq) return;
+    $("status").className = "status e";
+    $("status").textContent = `${t("failed")}: ${e.message}`;
+    $("tw").innerHTML = "";
+  } finally {
+    tickCooldown();
+  }
+}
+function routePoints() {
+  const A = AIRPORTS[S.from], B = AIRPORTS[S.to];
+  return [[A.lat, A.lon], ...S.wp, [B.lat, B.lon]];
+}
+// Къде да се вмъкне нова точка: в участъка, най-близък до нея
+function insertIndex(p) {
+  const pts = routePoints();
+  const kx = Math.cos(p[0] * Math.PI / 180);
+  let best = 0, bestD = Infinity;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const ax = pts[i][1] * kx, ay = pts[i][0], bx = pts[i + 1][1] * kx, by = pts[i + 1][0];
+    const px = p[1] * kx, py = p[0];
+    const L = (bx - ax) ** 2 + (by - ay) ** 2;
+    const u = L ? Math.max(0, Math.min(1, ((px - ax) * (bx - ax) + (py - ay) * (by - ay)) / L)) : 0;
+    const d = (ax + u * (bx - ax) - px) ** 2 + (ay + u * (by - ay) - py) ** 2;
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return best;   // индекс в S.wp
+}
+
+// ---------------------------------------------------------------
+// Адрес ↔ състояние
+// ---------------------------------------------------------------
+function readUrl() {
+  const q = new URLSearchParams(location.search);
+  let lang = q.get("lang");
+  if (!lang) { try { lang = localStorage.getItem("route_lang"); } catch (e) {} }
+  if (lang === "en" || lang === "bg") S.lang = lang;
+  const f = (q.get("from") || "").toUpperCase(), to = (q.get("to") || "").toUpperCase();
+  if (AIRPORTS[f]) S.from = f;
+  if (AIRPORTS[to]) S.to = to;
+  const etd = fromParam(q.get("etd"));
+  S.etd = etd || defaultEtd();
+  const tas = parseInt(q.get("tas"), 10), fl = parseInt(q.get("fl"), 10);
+  if (Number.isFinite(tas)) S.tas = tas;
+  if (Number.isFinite(fl)) S.fl = fl;
+  S.wp = (q.get("wp") || "").split(";").map(parseCoord).filter(p => p && inRegion(p)).map(p => [r4(p[0]), r4(p[1])]);
+}
+function writeUrl() {
+  const q = new URLSearchParams();
+  q.set("from", S.from); q.set("to", S.to);
+  if (S.etd) q.set("etd", toParam(S.etd));
+  q.set("tas", S.tas); q.set("fl", String(S.fl).padStart(3, "0"));
+  if (S.wp.length) q.set("wp", S.wp.map(p => `${p[0]},${p[1]}`).join(";"));
+  q.set("lang", S.lang);
+  history.replaceState(null, "", `${location.pathname}?${q.toString().replace(/%2C/g, ",").replace(/%3B/g, ";")}`);
+}
+
+// ---------------------------------------------------------------
+// Проверка
+// ---------------------------------------------------------------
+function validate() {
+  const errs = [];
+  const now = Date.now();
+  const etdOk = S.etd && S.etd.getTime() >= now - 10 * 60000 && S.etd.getTime() <= now + HORIZON_H * 3600000;
+  if (!S.etd || S.etd.getTime() < now - 10 * 60000) errs.push(t("errEtdPast"));
+  else if (S.etd.getTime() > now + HORIZON_H * 3600000) errs.push(t("errEtdFar"));
+  const tasOk = S.tas >= LIM.tas[0] && S.tas <= LIM.tas[1];
+  const flOk = S.fl >= LIM.fl[0] && S.fl <= LIM.fl[1];
+  if (!tasOk) errs.push(t("errTas"));
+  if (!flOk) errs.push(t("errFl"));
+  if (S.from === S.to && !S.wp.length) errs.push(t("errSame"));
+  $("etd").setAttribute("aria-invalid", !etdOk);
+  $("tas").setAttribute("aria-invalid", !tasOk);
+  $("fl").setAttribute("aria-invalid", !flOk);
+  $("f-err").textContent = errs.join(" ");
+  return !errs.length;
+}
+
+// ---------------------------------------------------------------
+// Карта
+// ---------------------------------------------------------------
+const map = L.map("map", {zoomSnap: 0.5}).setView([42.75, 25.4], 7);
+// Подложки без ключ. OSM е по подразбиране; сървърите му искат Referer,
+// затова страницата се отваря през http (Pages или локален сървър:
+// python -m http.server 8000 -d web), а не директно от file://.
+const base = {
+  "OSM": L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 13, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}),
+  "OpenTopoMap": L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", {
+    maxZoom: 13, subdomains: "abc",
+    attribution: '© OpenStreetMap contributors, SRTM · © <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)'}),
+  "Esri Topo": L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}", {
+    maxZoom: 13, attribution: "Tiles © Esri — Esri, HERE, Garmin, USGS, NGA"}),
+};
+base["OSM"].addTo(map);
+L.control.layers(base, null, {position: "topright"}).addTo(map);
+const apLayer = L.layerGroup().addTo(map), wpLayer = L.layerGroup().addTo(map);
+const line = L.polyline([], {color: "#121821", weight: 3, opacity: .85}).addTo(map);
+const profLayer = L.layerGroup().addTo(map);
+
+function drawAirports() {
+  apLayer.clearLayers();
+  for (const [icao, a] of Object.entries(AIRPORTS)) {
+    const active = icao === S.from || icao === S.to;
+    L.marker([a.lat, a.lon], {
+      icon: L.divIcon({className: "", html: `<span class="ap-ic" style="${active ? "" : "background:#6B7280"}">${icao}</span>`, iconAnchor: [18, 10]}),
+      keyboard: false, title: `${icao} ${a[S.lang]}`,
+    }).addTo(apLayer);
+  }
+}
+function drawRoute() {
+  line.setLatLngs(routePoints());
+  wpLayer.clearLayers();
+  S.wp.forEach((p, i) => {
+    const m = L.marker(p, {
+      draggable: true, title: `${t("wpN")} ${i + 1}`,
+      icon: L.divIcon({className: "wp-ic", html: String(i + 1), iconSize: [22, 22]}),
+    }).addTo(wpLayer);
+    m.on("dragend", e => { const ll = e.target.getLatLng(); S.wp[i] = [r4(ll.lat), r4(ll.lng)]; update(); });
+    const pop = document.createElement("div");
+    pop.innerHTML = `<div class="mono">${fmtCoord(p)}</div>`;
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "btn"; b.style.cssText = "margin-top:6px;padding:0 10px";
+    b.textContent = t("remove");
+    b.onclick = () => { S.wp.splice(i, 1); map.closePopup(); update(); };
+    pop.appendChild(b);
+    m.bindPopup(pop);
+  });
+}
+map.on("click", e => {
+  const p = [r4(e.latlng.lat), r4(e.latlng.lng)];
+  if (!inRegion(p)) return;
+  S.wp.splice(insertIndex(p), 0, p);
+  update();
+});
+function fitRoute() { map.fitBounds(L.latLngBounds(routePoints()).pad(.25), {maxZoom: 9}); }
+
+// ---------------------------------------------------------------
+// Форма
+// ---------------------------------------------------------------
+function fillSelects() {
+  for (const id of ["from", "to"]) {
+    const sel = $(id);
+    sel.innerHTML = Object.entries(AIRPORTS).map(([icao, a]) => `<option value="${icao}">${icao} · ${a[S.lang]}</option>`).join("");
+    sel.value = S[id];
+  }
+}
+function drawWpList() {
+  const box = $("wp-list");
+  box.innerHTML = "";
+  if (!S.wp.length) { box.innerHTML = `<div class="empty">${t("noWps")}</div>`; return; }
+  S.wp.forEach((p, i) => {
+    const row = document.createElement("div");
+    row.className = "wp";
+    const inp = document.createElement("input");
+    inp.className = "mono"; inp.value = fmtCoord(p); inp.setAttribute("aria-label", `${t("wpN")} ${i + 1}`);
+    inp.addEventListener("change", () => {
+      const c = parseCoord(inp.value);
+      if (!c) { inp.setAttribute("aria-invalid", "true"); $("wp-err").textContent = t("errCoord"); return; }
+      if (!inRegion(c)) { inp.setAttribute("aria-invalid", "true"); $("wp-err").textContent = t("errOutside"); return; }
+      $("wp-err").textContent = ""; S.wp[i] = [r4(c[0]), r4(c[1])]; update();
+    });
+    const del = document.createElement("button");
+    del.type = "button"; del.textContent = "✕"; del.setAttribute("aria-label", `${t("remove")} ${i + 1}`);
+    del.onclick = () => { S.wp.splice(i, 1); update(); };
+    row.innerHTML = `<span class="n">${i + 1}</span>`;
+    row.append(inp, del);
+    box.appendChild(row);
+  });
+}
+function addTyped() {
+  const c = parseCoord($("wp-new").value);
+  if (!c) { $("wp-err").textContent = t("errCoord"); return; }
+  if (!inRegion(c)) { $("wp-err").textContent = t("errOutside"); return; }
+  $("wp-err").textContent = ""; $("wp-new").value = "";
+  const p = [r4(c[0]), r4(c[1])];
+  S.wp.splice(insertIndex(p), 0, p);
+  update(); fitRoute();
+}
+const hhmmUtc = d => `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+function drawSummary(ok, F = null) {
+  $("etd-hint").textContent = S.etd ? `${hhmmLocal(S.etd)} ${t("local")}` : "";
+  profLayer.clearLayers();
+  if (!ok || !S.etd) {
+    $("sum").innerHTML = "";
+    return;
+  }
+  F = F || buildFlight();
+  const min = (F.eta - S.etd) / 60000;
+  const hm = `${Math.floor(min / 60)}:${pad(Math.round(min % 60))}`;
+  const fl = String(Math.round(F.vp.top / 100)).padStart(3, "0");
+  $("sum").innerHTML = `<span>${t("dist")} <b>${Math.round(F.total * NM_KM)} km</b></span>`
+    + `<span>${t("time")} <b>${hm}</b></span>`
+    + `<span>ETA <b>${hhmmUtc(F.eta)} UTC</b> (${hhmmLocal(F.eta)} ${t("local")})</span>`
+    + `<span>TOC <b>${Math.round(F.vp.sToc * NM_KM)} km</b> · TOD <b>${Math.round((F.total - F.vp.sTod) * NM_KM)} km</b> ${t("beforeArr")}</span>`
+    + (F.vp.reached ? "" : `<span class="err">${t("notReached")} FL${fl}</span>`)
+    + `<span>${t("legs")} <b>${S.wp.length + 1}</b> · ${t("samples")} <b>${F.path.length}</b></span>`;
+  // Точките по траекторията и TOC/TOD на картата
+  F.path.forEach(p => L.circleMarker([p.lat, p.lon], {radius: 2, color: p.phase === "cruise" ? "#121821" : "#1F5FBF",
+    weight: 1, fillOpacity: 1, interactive: false}).addTo(profLayer));
+  for (const [lab, P] of [["TOC", F.toc], ["TOD", F.tod]]) {
+    L.marker([P.lat, P.lon], {keyboard: false, interactive: false,
+      icon: L.divIcon({className: "", iconAnchor: [-6, 8],
+        html: `<span class="ap-ic" style="background:#1F5FBF">${lab} ${hhmmUtc(P.t)}</span>`})}).addTo(profLayer);
+  }
+}
+function applyLang() {
+  document.documentElement.lang = S.lang;
+  document.querySelectorAll("[data-t]").forEach(el => { el.textContent = t(el.dataset.t); });
+  document.querySelectorAll(".lang button").forEach(b => b.setAttribute("aria-pressed", b.dataset.lang === S.lang));
+  document.title = t("title");
+  fillSelects();
+}
+
+function update() {
+  calcSeq++;   // старите резултати не важат
+  $("res").hidden = true;
+  tickCooldown();
+  const ok = validate();
+  drawAirports(); drawRoute(); drawWpList(); drawSummary(ok);
+  writeUrl();
+}
+
+// ---------------------------------------------------------------
+// Начало
+// ---------------------------------------------------------------
+readUrl();
+applyLang();
+$("etd").value = toInput(S.etd);
+$("tas").value = S.tas;
+$("fl").value = String(S.fl).padStart(3, "0");
+
+$("from").addEventListener("change", e => { S.from = e.target.value; update(); fitRoute(); });
+$("to").addEventListener("change", e => { S.to = e.target.value; update(); fitRoute(); });
+$("etd").addEventListener("change", e => { S.etd = fromInput(e.target.value); update(); });
+$("tas").addEventListener("input", e => { S.tas = parseInt(e.target.value, 10); update(); });
+$("fl").addEventListener("input", e => { S.fl = parseInt(e.target.value, 10); update(); });
+$("fl").addEventListener("change", e => { if (Number.isFinite(S.fl)) e.target.value = String(S.fl).padStart(3, "0"); });
+$("wp-add").addEventListener("click", addTyped);
+$("wp-new").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addTyped(); } });
+$("f").addEventListener("submit", e => { e.preventDefault(); calculate(); });
+document.querySelectorAll(".lang button").forEach(b => b.addEventListener("click", () => {
+  S.lang = b.dataset.lang;
+  try { localStorage.setItem("route_lang", S.lang); } catch (e) {}
+  applyLang(); update();
+}));
+
+update();
+fitRoute();
+// Без автоматично смятане при отваряне: адресът винаги съдържа etd, така че
+// всяко F5 би харчило лимита на Open-Meteo, а после и бутонът — двойно.
+</script>
+</body>
+</html>
