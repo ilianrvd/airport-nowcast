@@ -58,6 +58,17 @@ input[aria-invalid=true]{border-color:var(--err);background:#FDF2F0}
 #map{height:min(70vh,620px);min-height:380px;border-radius:8px;border:1px solid #DDE1E7}
 .sum{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;margin-top:10px}
 .sum b{font-family:'IBM Plex Mono',monospace;font-weight:600}
+.res{grid-column:1/-1}
+.status{font-size:13px;color:var(--mut);margin:0 0 8px}
+.status.e{color:var(--err);font-weight:600}
+.tw{overflow-x:auto;border:1px solid #DDE1E7;border-radius:8px;background:#fff}
+table.d{border-collapse:collapse;width:100%;font-size:12.5px}
+table.d th,table.d td{border-bottom:1px solid var(--line);padding:5px 7px;text-align:right;white-space:nowrap}
+table.d th{background:#F8F9FB;color:var(--mut);font-weight:600;font-size:11.5px;position:sticky;top:0}
+table.d td{font-family:'IBM Plex Mono',monospace}
+table.d td.ph{font-family:inherit;color:var(--mut);text-align:left}
+table.d tr.cruise td{background:#fff}table.d tr.climb td,table.d tr.desc td{background:#F5F8FD}
+.na{color:#9AA3AF}
 .note{grid-column:1/-1;font-size:12.5px;color:#3D2A00;background:#FDF3D7;border:1px solid #F0D58C;border-radius:8px;padding:9px 12px;line-height:1.45}
 footer{grid-column:1/-1;font-size:12px;color:var(--mut);line-height:1.6}
 .ap-ic{background:#121821;color:#fff;border-radius:4px;font:600 11px 'IBM Plex Mono',monospace;padding:2px 5px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.3)}
@@ -101,7 +112,7 @@ footer{grid-column:1/-1;font-size:12px;color:var(--mut);line-height:1.6}
         <span class="err" id="wp-err" role="alert"></span>
       </div>
       <span class="err full" id="f-err" role="alert" style="grid-column:1/-1"></span>
-      <button type="submit" class="btn primary" id="go" disabled data-t="calc">Изчисли (от следващия етап)</button>
+      <button type="submit" class="btn primary" id="go" data-t="calc">Изчисли</button>
     </form>
     <div class="sum" id="sum" aria-live="polite"></div>
   </section>
@@ -110,8 +121,14 @@ footer{grid-column:1/-1;font-size:12px;color:var(--mut);line-height:1.6}
     <div id="map"></div>
   </section>
 
+  <section class="res" aria-labelledby="h-res" id="res" hidden>
+    <h2 id="h-res" class="status" style="font-weight:700;color:var(--ink)" data-t="resTitle">Данни по точките</h2>
+    <p class="status" id="status" aria-live="polite"></p>
+    <div class="tw" id="tw"></div>
+  </section>
+
   <p class="note" data-t="note">Прогнозата по маршрут е експериментална и не замества официалните прогнози за полети на ниски нива (GAMET) и предполетната метеорологична консултация.</p>
-  <footer data-t="footer">Експериментален продукт за обучение и проучване. Карта: © OpenStreetMap contributors. Модели (от следващите етапи): ICON-EU и ECMWF IFS през Open-Meteo.</footer>
+  <footer data-t="footer">Експериментален продукт за обучение и проучване. Карта: © OpenStreetMap contributors. Модели: ICON-EU и ECMWF IFS през Open-Meteo (CC BY 4.0). Релеф: Open-Meteo Elevation API.</footer>
 </main>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -143,10 +160,16 @@ const T = {
     tas: "Крейсерска скорост (TAS, kt)", fl: "Полетно ниво (FL)",
     wps: "Междинни точки", wpsHint: "клик на картата добавя точка",
     wpAddLabel: "или координати: 42.70 23.40 · 4242N02324E", add: "Добави",
-    calc: "Изчисли (от следващия етап)", remove: "Премахни", noWps: "Няма — права линия между летищата.",
+    calc: "Изчисли", remove: "Премахни", noWps: "Няма — права линия между летищата.",
     note: "Прогнозата по маршрут е експериментална и не замества официалните прогнози за полети на ниски нива (GAMET) и предполетната метеорологична консултация.",
-    footer: "Експериментален продукт за обучение и проучване. Карта: © OpenStreetMap contributors. Модели (от следващите етапи): ICON-EU и ECMWF IFS през Open-Meteo.",
+    footer: "Експериментален продукт за обучение и проучване. Карта: © OpenStreetMap contributors. Модели: ICON-EU и ECMWF IFS през Open-Meteo (CC BY 4.0). Релеф: Open-Meteo Elevation API.",
     dist: "Разстояние", time: "Време на полета", legs: "Участъци", local: "местно",
+    resTitle: "Данни по точките (временен изглед за проверка, етап 3)",
+    loading: "Сваляне на данните…", failed: "Данните не можаха да се свалят",
+    runInfo: "Изчислено", noModel: "няма данни",
+    thS: "NM", thT: "UTC", thPh: "фаза", thAlt: "ft", thTer: "терен ft", thTerC: "терен ±10 km",
+    thW: "вятър", thTemp: "T °C", thRH: "RH %", thCC: "облак %", thVis: "вид. земя m", thGS: "GS kt",
+    phClimb: "изкачв.", phCruise: "ниво", phDesc: "сниж.",
     samples: "точки", beforeArr: "преди кацането", notReached: "Маршрутът е къс — не достига",
     errSame: "Летищата на излитане и кацане са еднакви.",
     errEtdPast: "Времето на излитане е минало.",
@@ -163,10 +186,16 @@ const T = {
     tas: "Cruise speed (TAS, kt)", fl: "Flight level (FL)",
     wps: "Waypoints", wpsHint: "click on the map to add a point",
     wpAddLabel: "or coordinates: 42.70 23.40 · 4242N02324E", add: "Add",
-    calc: "Calculate (next stage)", remove: "Remove", noWps: "None — direct line between the airports.",
+    calc: "Calculate", remove: "Remove", noWps: "None — direct line between the airports.",
     note: "The route forecast is experimental and does not replace the official low-level forecasts (GAMET) or a pre-flight meteorological briefing.",
-    footer: "Experimental product for training and research. Map: © OpenStreetMap contributors. Models (next stages): ICON-EU and ECMWF IFS via Open-Meteo.",
+    footer: "Experimental product for training and research. Map: © OpenStreetMap contributors. Models: ICON-EU and ECMWF IFS via Open-Meteo (CC BY 4.0). Terrain: Open-Meteo Elevation API.",
     dist: "Distance", time: "Flight time", legs: "Legs", local: "local",
+    resTitle: "Data at the points (temporary review view, stage 3)",
+    loading: "Downloading data…", failed: "Could not download the data",
+    runInfo: "Calculated", noModel: "no data",
+    thS: "NM", thT: "UTC", thPh: "phase", thAlt: "ft", thTer: "terrain ft", thTerC: "terrain ±10 km",
+    thW: "wind", thTemp: "T °C", thRH: "RH %", thCC: "cloud %", thVis: "sfc vis m", thGS: "GS kt",
+    phClimb: "climb", phCruise: "level", phDesc: "desc.",
     samples: "points", beforeArr: "before arrival", notReached: "Route too short — does not reach",
     errSame: "Departure and destination are the same.",
     errEtdPast: "Departure time is in the past.",
@@ -346,6 +375,269 @@ function pointAt(path, s) {
   }
   return path[path.length - 1];
 }
+
+// ---------------------------------------------------------------
+// Данни (етап 3): Open-Meteo по точките на траекторията
+// ---------------------------------------------------------------
+// Всеки модел — отделна заявка за всички точки и само за часовете на
+// полета. Нивата, които моделът не дава, идват като null и отпадат.
+// Нивата под земята (p > налягането на земята) отпадат; земята е
+// отделно „ниво“ с T2m, RH2m и вятъра на 10 m.
+// Височината на полета (FL като pressure altitude, ft) → налягане по ISA;
+// стойностите се интерполират между нивата в ln p и линейно във времето.
+const OM = "https://api.open-meteo.com/v1/forecast";
+const OM_ELEV = "https://api.open-meteo.com/v1/elevation";
+const MODELS = {icon: "icon_eu", ifs: "ecmwf_ifs"};
+const LEVELS = [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500, 400];
+const PL_VARS = ["temperature", "relative_humidity", "wind_speed", "wind_direction", "geopotential_height", "cloud_cover"];
+const SFC_VARS = ["temperature_2m", "dew_point_2m", "relative_humidity_2m", "wind_speed_10m", "wind_direction_10m",
+  "surface_pressure", "visibility", "cloud_cover", "cloud_cover_low", "precipitation", "snowfall",
+  "weather_code", "freezing_level_height", "cape"];
+const TERRAIN_STEP_KM = 2, CORRIDOR_KM = [5, 10], CORRIDOR_STEP_KM = 5;
+
+const isaP = ft => 1013.25 * Math.pow(1 - 6.8756e-6 * ft, 5.2559);   // hPa
+const fin = x => typeof x === "number" && Number.isFinite(x);
+const uv = (spd, dir) => [-spd * Math.sin(dir * D2R), -spd * Math.cos(dir * D2R)];
+const dirspd = (u, v) => [(Math.atan2(-u, -v) / D2R + 360) % 360, Math.hypot(u, v)];
+const isoHour = ms => new Date(Math.floor(ms / 3600000) * 3600000).toISOString().slice(0, 16);
+
+const cache = new Map();
+async function getJson(url) {
+  if (cache.has(url)) return cache.get(url);
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`${r.status} ${(await r.text()).slice(0, 160)}`);
+  const j = await r.json();
+  cache.set(url, j);
+  return j;
+}
+
+// Само нивата до първото над полетното ниво: по-малко данни и по-малко
+// „тежест“ на заявката в лимита на Open-Meteo (броят се точки × променливи).
+function flightLevels() {
+  const p = isaP(S.fl * 100);
+  const k = LEVELS.findIndex(l => l < p);
+  return k === -1 ? LEVELS : LEVELS.slice(0, k + 1);
+}
+async function fetchModel(key, pts, t0, t1) {
+  const q = new URLSearchParams({
+    latitude: pts.map(p => p.lat.toFixed(4)).join(","),
+    longitude: pts.map(p => p.lon.toFixed(4)).join(","),
+    models: MODELS[key],
+    hourly: [...SFC_VARS, ...flightLevels().flatMap(l => PL_VARS.map(v => `${v}_${l}hPa`))].join(","),
+    start_hour: isoHour(t0), end_hour: isoHour(t1 + 3600000),
+    wind_speed_unit: "kn", timezone: "GMT", timeformat: "unixtime", cell_selection: "nearest",
+  });
+  let j = await getJson(`${OM}?${q}`);
+  if (!Array.isArray(j)) j = [j];
+  return j.map(d => ({t: (d.hourly?.time || []).map(x => x * 1000), h: d.hourly || {}, elev: d.elevation}));
+}
+
+async function fetchElevation(coords) {
+  const out = [];
+  for (let i = 0; i < coords.length; i += 100) {
+    const c = coords.slice(i, i + 100);
+    const q = new URLSearchParams({latitude: c.map(p => p[0].toFixed(4)).join(","),
+                                   longitude: c.map(p => p[1].toFixed(4)).join(",")});
+    const j = await getJson(`${OM_ELEV}?${q}`);
+    out.push(...(j.elevation || []));
+  }
+  return out;
+}
+function destPoint([lat, lon], brg, km) {
+  const d = km / NM_KM / R_NM, b = brg * D2R, la = lat * D2R, lo = lon * D2R;
+  const la2 = Math.asin(Math.sin(la) * Math.cos(d) + Math.cos(la) * Math.sin(d) * Math.cos(b));
+  const lo2 = lo + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(la), Math.cos(d) - Math.sin(la) * Math.sin(la2));
+  return [la2 / D2R, lo2 / D2R];
+}
+// Терен: по пътя през 2 km и в коридор ±5/±10 km през 5 km.
+// Връща {track: [{s, ft}], corridor: [{s, ft}]} (s в NM).
+async function fetchTerrain(path) {
+  const total = path[path.length - 1].s;
+  const along = (stepKm) => {
+    const out = [];
+    for (let s = 0; s <= total + 1e-6; s += stepKm / NM_KM) {
+      const p = pointAtS(path, Math.min(s, total));
+      out.push({s: Math.min(s, total), lat: p.lat, lon: p.lon, trk: p.trk});
+    }
+    return out;
+  };
+  const tr = along(TERRAIN_STEP_KM), cr = along(CORRIDOR_STEP_KM);
+  const side = [];
+  cr.forEach(p => CORRIDOR_KM.forEach(km => [90, -90].forEach(a => side.push({s: p.s, c: destPoint([p.lat, p.lon], p.trk + a, km)}))));
+  const elev = await fetchElevation([...tr.map(p => [p.lat, p.lon]), ...side.map(p => p.c)]);
+  const ft = m => fin(m) ? m / 0.3048 : NaN;
+  const track = tr.map((p, i) => ({s: p.s, ft: ft(elev[i])}));
+  const corridor = side.map((p, i) => ({s: p.s, ft: ft(elev[tr.length + i])}));
+  return {track, corridor};
+}
+function pointAtS(path, s) {   // позиция и курс на разстояние s (без час)
+  for (let i = 1; i < path.length; i++) if (path[i].s >= s - 1e-9) {
+    const a = path[i - 1], b = path[i], f = (s - a.s) / ((b.s - a.s) || 1);
+    return {lat: a.lat + f * (b.lat - a.lat), lon: a.lon + f * (b.lon - a.lon), trk: b.trk};
+  }
+  const z = path[path.length - 1];
+  return {lat: z.lat, lon: z.lon, trk: z.trk};
+}
+// Най-високият терен в прозорец ±w NM около s
+function terrainMax(list, s, w) {
+  let m = -Infinity;
+  for (const x of list) if (Math.abs(x.s - s) <= w && fin(x.ft)) m = Math.max(m, x.ft);
+  return Number.isFinite(m) ? m : NaN;
+}
+
+// Стойност на променлива във времето ts (линейно между часовете)
+function tAt(d, key, ts) {
+  const y = d.h[key], t = d.t;
+  if (!y || !t.length) return NaN;
+  let k = t.findIndex(x => x >= ts);
+  if (k === -1) return NaN;
+  if (k === 0) return fin(y[0]) && Math.abs(t[0] - ts) < 60000 ? y[0] : NaN;
+  const a = y[k - 1], b = y[k];
+  if (!fin(a) || !fin(b)) return NaN;
+  return a + (b - a) * (ts - t[k - 1]) / (t[k] - t[k - 1]);
+}
+// Колона към момента ts: [{p, z, T, RH, u, v, cc}], от земята нагоре (p намалява)
+function column(d, ts) {
+  const ps = tAt(d, "surface_pressure", ts);
+  const col = [];
+  if (fin(ps)) {
+    const [u, v] = uv(tAt(d, "wind_speed_10m", ts), tAt(d, "wind_direction_10m", ts));
+    col.push({p: ps, z: d.elev, T: tAt(d, "temperature_2m", ts), RH: tAt(d, "relative_humidity_2m", ts),
+              u, v, cc: NaN, sfc: true});
+  }
+  for (const l of LEVELS) {
+    if (fin(ps) && l >= ps) continue;
+    const g = k => tAt(d, `${k}_${l}hPa`, ts);
+    const T = g("temperature"), RH = g("relative_humidity"), sp = g("wind_speed"), dr = g("wind_direction");
+    if (!fin(T) && !fin(sp)) continue;
+    const [u, v] = fin(sp) && fin(dr) ? uv(sp, dr) : [NaN, NaN];
+    col.push({p: l, z: g("geopotential_height"), T, RH, u, v, cc: g("cloud_cover")});
+  }
+  return col.sort((a, b) => b.p - a.p);
+}
+// Стойности на височина ft (pressure altitude): интерполация в ln p
+function atAlt(col, ft) {
+  const p = isaP(ft);
+  const out = {p, below: false};
+  if (!col.length) return null;
+  if (p >= col[0].p) {   // на или под земята на модела
+    out.below = p > col[0].p + 5;
+    for (const k of ["T", "RH", "u", "v", "cc"]) out[k] = col[0][k];
+    return out;
+  }
+  for (const k of ["T", "RH", "u", "v", "cc"]) {
+    const lv = col.filter(c => fin(c[k]));
+    out[k] = NaN;
+    for (let i = 0; i < lv.length - 1; i++) {
+      const a = lv[i], b = lv[i + 1];
+      if (p <= a.p && p >= b.p) {
+        const f = Math.log(a.p / p) / Math.log(a.p / b.p);
+        out[k] = a[k] + f * (b[k] - a[k]);
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+// Всичко за полета: данни, вятър за путевата скорост, стойности по точките
+async function computeFlight() {
+  const F0 = buildFlight();
+  const t0 = S.etd.getTime() - 3600000;
+  const t1 = Math.max(F0.eta.getTime() * 2 - S.etd.getTime(), F0.eta.getTime() + 3600000);   // запас за насрещен вятър
+  const pts = F0.path;
+  const keys = Object.keys(MODELS);
+  const res = await Promise.allSettled([...keys.map(k => fetchModel(k, pts, t0, t1)), fetchTerrain(pts)]);
+  const data = {}, errors = {};
+  keys.forEach((k, i) => res[i].status === "fulfilled" ? data[k] = res[i].value : errors[k] = String(res[i].reason));
+  const terrain = res[keys.length].status === "fulfilled" ? res[keys.length].value : null;
+  if (!terrain) errors.terrain = String(res[keys.length].reason);
+  if (!Object.keys(data).length) throw new Error(Object.values(errors).join("; "));
+
+  // Вятър за путевата скорост: средно от моделите в най-близката точка
+  const nearest = (lat, lon) => {
+    let b = 0, bd = Infinity;
+    pts.forEach((p, i) => { const d = (p.lat - lat) ** 2 + ((p.lon - lon) * Math.cos(lat * D2R)) ** 2; if (d < bd) { bd = d; b = i; } });
+    return b;
+  };
+  const windAt = (lat, lon, alt, t) => {
+    const i = nearest(lat, lon);
+    let u = 0, v = 0, n = 0;
+    for (const k of keys) {
+      if (!data[k]) continue;
+      const w = atAlt(column(data[k][i], t), alt);
+      if (w && fin(w.u) && fin(w.v)) { u += w.u; v += w.v; n++; }
+    }
+    return n ? {u: u / n, v: v / n} : null;
+  };
+  const F = buildFlight(windAt);
+  F.path.forEach((p, i) => {
+    p.m = {};
+    for (const k of keys) {
+      if (!data[k]) continue;
+      const d = data[k][i], ts = p.t.getTime();
+      const a = atAlt(column(d, ts), p.alt);
+      p.m[k] = a && {...a, vis: tAt(d, "visibility", ts), ccl: tAt(d, "cloud_cover_low", ts),
+                     pr: tAt(d, "precipitation", ts), fzl: tAt(d, "freezing_level_height", ts),
+                     cape: tAt(d, "cape", ts), wx: tAt(d, "weather_code", ts), elev: d.elev};
+    }
+    if (terrain) {
+      p.ter = terrainMax(terrain.track, p.s, 1);
+      p.terC = terrainMax(terrain.corridor, p.s, CORRIDOR_STEP_KM / NM_KM);
+    }
+  });
+  F.terrain = terrain; F.errors = errors; F.data = data;
+  return F;
+}
+
+// Временен изглед за проверка на етап 3
+function drawData(F) {
+  const keys = Object.keys(MODELS).filter(k => F.data[k]);
+  const r0 = x => fin(x) ? Math.round(x) : "<span class=na>—</span>";
+  const wind = a => a && fin(a.u) ? (([d, s]) => `${String(Math.round(d / 10) * 10 % 360 || 360).padStart(3, "0")}/${String(Math.round(s)).padStart(2, "0")}`)(dirspd(a.u, a.v)) : "<span class=na>—</span>";
+  const ph = {climb: t("phClimb"), cruise: t("phCruise"), desc: t("phDesc")};
+  const mh = (lab) => keys.map(k => `<th>${lab}<br>${k.toUpperCase()}</th>`).join("");
+  let h = `<table class="d"><thead><tr><th>${t("thS")}</th><th>${t("thT")}</th><th>${t("thPh")}</th><th>${t("thAlt")}</th>`
+    + `<th>${t("thTer")}</th><th>${t("thTerC")}</th><th>${t("thGS")}</th>${mh(t("thW"))}${mh(t("thTemp"))}${mh(t("thRH"))}${mh(t("thCC"))}${mh(t("thVis"))}</tr></thead><tbody>`;
+  for (const p of F.path) {
+    const m = k => p.m[k] || {};
+    h += `<tr class="${p.phase}"><td>${Math.round(p.s)}</td><td>${hhmmUtc(p.t)}</td><td class="ph">${ph[p.phase]}</td>`
+      + `<td>${Math.round(p.alt / 100) * 100}</td><td>${r0(p.ter)}</td><td>${r0(p.terC)}</td><td>${r0(p.gs)}</td>`
+      + keys.map(k => `<td>${wind(m(k))}</td>`).join("")
+      + keys.map(k => `<td>${fin(m(k).T) ? m(k).T.toFixed(1) : "<span class=na>—</span>"}</td>`).join("")
+      + keys.map(k => `<td>${r0(m(k).RH)}</td>`).join("")
+      + keys.map(k => `<td>${r0(m(k).cc)}</td>`).join("")
+      + keys.map(k => `<td>${r0(m(k).vis)}</td>`).join("") + "</tr>";
+  }
+  $("tw").innerHTML = h + "</tbody></table>";
+}
+
+let calcSeq = 0;
+async function calculate() {
+  if (!validate()) return;
+  const seq = ++calcSeq;
+  $("res").hidden = false;
+  $("status").className = "status";
+  $("status").textContent = t("loading");
+  $("go").disabled = true;
+  try {
+    const F = await computeFlight();
+    if (seq !== calcSeq) return;
+    const errs = Object.entries(F.errors).map(([k, e]) => `${k.toUpperCase()}: ${t("noModel")} (${e})`);
+    const min = (F.eta - S.etd) / 60000;
+    $("status").textContent = `${t("runInfo")} ${hhmmUtc(new Date())} UTC · ${t("time")} ${Math.floor(min / 60)}:${pad(Math.round(min % 60))} · ETA ${hhmmUtc(F.eta)} UTC`
+      + (errs.length ? ` · ${errs.join(" · ")}` : "");
+    drawData(F);
+    drawSummary(true, F);
+  } catch (e) {
+    if (seq !== calcSeq) return;
+    $("status").className = "status e";
+    $("status").textContent = `${t("failed")}: ${e.message}`;
+    $("tw").innerHTML = "";
+  } finally {
+    if (seq === calcSeq) $("go").disabled = false;
+  }
+}
 function routePoints() {
   const A = AIRPORTS[S.from], B = AIRPORTS[S.to];
   return [[A.lat, A.lon], ...S.wp, [B.lat, B.lon]];
@@ -506,14 +798,14 @@ function addTyped() {
   update(); fitRoute();
 }
 const hhmmUtc = d => `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
-function drawSummary(ok) {
+function drawSummary(ok, F = null) {
   $("etd-hint").textContent = S.etd ? `${hhmmLocal(S.etd)} ${t("local")}` : "";
   profLayer.clearLayers();
   if (!ok || !S.etd) {
     $("sum").innerHTML = "";
     return;
   }
-  const F = buildFlight();
+  F = F || buildFlight();
   const min = (F.eta - S.etd) / 60000;
   const hm = `${Math.floor(min / 60)}:${pad(Math.round(min % 60))}`;
   const fl = String(Math.round(F.vp.top / 100)).padStart(3, "0");
@@ -541,6 +833,9 @@ function applyLang() {
 }
 
 function update() {
+  calcSeq++;   // старите резултати не важат
+  $("res").hidden = true;
+  $("go").disabled = false;
   const ok = validate();
   drawAirports(); drawRoute(); drawWpList(); drawSummary(ok);
   writeUrl();
@@ -563,7 +858,7 @@ $("fl").addEventListener("input", e => { S.fl = parseInt(e.target.value, 10); up
 $("fl").addEventListener("change", e => { if (Number.isFinite(S.fl)) e.target.value = String(S.fl).padStart(3, "0"); });
 $("wp-add").addEventListener("click", addTyped);
 $("wp-new").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); addTyped(); } });
-$("f").addEventListener("submit", e => { e.preventDefault(); validate(); });
+$("f").addEventListener("submit", e => { e.preventDefault(); calculate(); });
 document.querySelectorAll(".lang button").forEach(b => b.addEventListener("click", () => {
   S.lang = b.dataset.lang;
   try { localStorage.setItem("route_lang", S.lang); } catch (e) {}
@@ -572,6 +867,7 @@ document.querySelectorAll(".lang button").forEach(b => b.addEventListener("click
 
 update();
 fitRoute();
+if (new URLSearchParams(location.search).has("etd") && validate()) calculate();   // споделен линк
 </script>
 </body>
 </html>
