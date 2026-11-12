@@ -146,7 +146,8 @@ const T = {
     calc: "Изчисли (от следващия етап)", remove: "Премахни", noWps: "Няма — права линия между летищата.",
     note: "Прогнозата по маршрут е експериментална и не замества официалните прогнози за полети на ниски нива (GAMET) и предполетната метеорологична консултация.",
     footer: "Експериментален продукт за обучение и проучване. Карта: © OpenStreetMap contributors. Модели (от следващите етапи): ICON-EU и ECMWF IFS през Open-Meteo.",
-    dist: "Разстояние", time: "Време по TAS", legs: "Участъци", local: "местно",
+    dist: "Разстояние", time: "Време на полета", legs: "Участъци", local: "местно",
+    samples: "точки", beforeArr: "преди кацането", notReached: "Маршрутът е къс — не достига",
     errSame: "Летищата на излитане и кацане са еднакви.",
     errEtdPast: "Времето на излитане е минало.",
     errEtdFar: `Излитането може да е до ${HORIZON_H} ч напред.`,
@@ -165,7 +166,8 @@ const T = {
     calc: "Calculate (next stage)", remove: "Remove", noWps: "None — direct line between the airports.",
     note: "The route forecast is experimental and does not replace the official low-level forecasts (GAMET) or a pre-flight meteorological briefing.",
     footer: "Experimental product for training and research. Map: © OpenStreetMap contributors. Models (next stages): ICON-EU and ECMWF IFS via Open-Meteo.",
-    dist: "Distance", time: "Time at TAS", legs: "Legs", local: "local",
+    dist: "Distance", time: "Flight time", legs: "Legs", local: "local",
+    samples: "points", beforeArr: "before arrival", notReached: "Route too short — does not reach",
     errSame: "Departure and destination are the same.",
     errEtdPast: "Departure time is in the past.",
     errEtdFar: `Departure can be up to ${HORIZON_H} h ahead.`,
@@ -234,13 +236,115 @@ function fmtCoord([lat, lon]) {
 }
 
 // ---------------------------------------------------------------
-// Геометрия (само разстояние; профилът е в етап 2)
+// Геометрия на полета (етап 2)
 // ---------------------------------------------------------------
-const R_NM = 3440.065;
+// Траектория: дъги по голям кръг между летищата и междинните точки,
+// разделени на точки през ~STEP_KM. Профил: изкачване от летището с
+// CLIMB_FPM при скорост CLIMB_TAS × TAS, крейсерски участък на FL,
+// снижение с DESC_FPM при TAS към летището на кацане. Ако маршрутът е
+// къс, върхът е там, където изкачването и снижението се срещат.
+// FL се приема за височина в ft (без поправка за QNH; разликата е до
+// няколкостотин ft и е под точността на моделите по нивата).
+// Час на всяка точка: по путевата скорост GS = TAS + компонента на вятъра
+// по пътя. windAt(lat, lon, alt_ft, t) идва от етап 3; без него GS = TAS.
+const R_NM = 3440.065, NM_KM = 1.852, D2R = Math.PI / 180;
+const STEP_KM = 10;
+const CLIMB_FPM = 500, DESC_FPM = 500, CLIMB_TAS = 0.8;
+
 function gcDist(a, b) {
-  const [la1, lo1, la2, lo2] = [a[0], a[1], b[0], b[1]].map(x => x * Math.PI / 180);
+  const [la1, lo1, la2, lo2] = [a[0], a[1], b[0], b[1]].map(x => x * D2R);
   const h = Math.sin((la2 - la1) / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin((lo2 - lo1) / 2) ** 2;
   return 2 * R_NM * Math.asin(Math.sqrt(h));
+}
+function gcBearing(a, b) {   // начален курс (истински), °
+  const [la1, lo1, la2, lo2] = [a[0], a[1], b[0], b[1]].map(x => x * D2R);
+  const y = Math.sin(lo2 - lo1) * Math.cos(la2);
+  const x = Math.cos(la1) * Math.sin(la2) - Math.sin(la1) * Math.cos(la2) * Math.cos(lo2 - lo1);
+  return (Math.atan2(y, x) / D2R + 360) % 360;
+}
+function gcInterp(a, b, f) {   // точка на дял f от дъгата a→b
+  const [la1, lo1, la2, lo2] = [a[0], a[1], b[0], b[1]].map(x => x * D2R);
+  const d = gcDist(a, b) / R_NM;
+  if (d < 1e-9) return [a[0], a[1]];
+  const A = Math.sin((1 - f) * d) / Math.sin(d), B = Math.sin(f * d) / Math.sin(d);
+  const x = A * Math.cos(la1) * Math.cos(lo1) + B * Math.cos(la2) * Math.cos(lo2);
+  const y = A * Math.cos(la1) * Math.sin(lo1) + B * Math.cos(la2) * Math.sin(lo2);
+  const z = A * Math.sin(la1) + B * Math.sin(la2);
+  return [Math.atan2(z, Math.hypot(x, y)) / D2R, Math.atan2(y, x) / D2R];
+}
+
+// Точки по траекторията: [{lat, lon, s (NM от излитането), trk (°), leg}]
+function samplePath(pts) {
+  const out = [];
+  let s0 = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1], d = gcDist(a, b);
+    const n = Math.max(1, Math.ceil(d * NM_KM / STEP_KM));
+    for (let k = (i === 0 ? 0 : 1); k <= n; k++) {
+      const f = k / n, p = gcInterp(a, b, f);
+      const q = gcInterp(a, b, Math.min(1, f + 1e-3)), r = gcInterp(a, b, Math.max(0, f - 1e-3));
+      out.push({lat: p[0], lon: p[1], s: s0 + f * d, trk: gcBearing(r, q), leg: i});
+    }
+    s0 += d;
+  }
+  return out;
+}
+
+// Вертикален профил. alt (ft) по разстояние s (NM).
+// Изкачване и снижение по разстояние при дадени скорости: Δs = Δh / fpm × kt / 60.
+function verticalProfile(total, depElev, arrElev, cruiseFt, tas) {
+  const climbRate = CLIMB_FPM * 60 / (tas * CLIMB_TAS);   // ft на NM
+  const descRate = DESC_FPM * 60 / tas;
+  let top = cruiseFt;
+  let sToc = (top - depElev) / climbRate, sTod = total - (top - arrElev) / descRate;
+  if (sToc > sTod) {   // къс маршрут — не достига FL
+    top = (depElev / climbRate + arrElev / descRate + total) / (1 / climbRate + 1 / descRate);
+    sToc = sTod = (top - depElev) / climbRate;
+  }
+  const alt = s => s <= sToc ? depElev + s * climbRate : s >= sTod ? arrElev + (total - s) * descRate : top;
+  return {top, sToc: Math.max(0, sToc), sTod: Math.min(total, sTod), alt, reached: top >= cruiseFt - 1};
+}
+
+// Цял профил с часовете. windAt → {u, v} (kt) или null.
+function buildFlight(windAt = null) {
+  const A = AIRPORTS[S.from], B = AIRPORTS[S.to];
+  const path = samplePath(routePoints());
+  const total = path[path.length - 1].s;
+  const depFt = A.elev / 0.3048, arrFt = B.elev / 0.3048, cruise = S.fl * 100;
+  const vp = verticalProfile(total, depFt, arrFt, Math.max(cruise, Math.max(depFt, arrFt) + 500), S.tas);
+  let t = S.etd.getTime();
+  path.forEach((p, i) => {
+    p.alt = vp.alt(p.s);
+    p.phase = p.s < vp.sToc - 1e-6 ? "climb" : p.s > vp.sTod + 1e-6 ? "desc" : "cruise";
+    if (i > 0) {
+      const q = path[i - 1], ds = p.s - q.s;
+      const mid = {lat: (p.lat + q.lat) / 2, lon: (p.lon + q.lon) / 2, alt: (p.alt + q.alt) / 2};
+      const tas = S.tas * (q.phase === "climb" ? CLIMB_TAS : 1);
+      let gs = tas;
+      const w = windAt ? windAt(mid.lat, mid.lon, mid.alt, t) : null;
+      if (w) {
+        // Триъгълник на скоростите: GS по пътя при TAS и вятър (u, v)
+        const tr = q.trk * D2R;
+        const along = w.u * Math.sin(tr) + w.v * Math.cos(tr);
+        const cross = -w.u * Math.cos(tr) + w.v * Math.sin(tr);
+        gs = Math.sqrt(Math.max(tas * tas - cross * cross, 1)) + along;
+      }
+      p.gs = Math.max(gs, 20);
+      t += ds / p.gs * 3600000;
+    }
+    p.t = new Date(t);
+  });
+  path[0].gs = path[1] ? path[1].gs : S.tas;
+  return {path, total, vp, eta: path[path.length - 1].t,
+          toc: pointAt(path, vp.sToc), tod: pointAt(path, vp.sTod)};
+}
+function pointAt(path, s) {
+  for (let i = 1; i < path.length; i++) if (path[i].s >= s) {
+    const a = path[i - 1], b = path[i], f = (s - a.s) / ((b.s - a.s) || 1);
+    return {lat: a.lat + f * (b.lat - a.lat), lon: a.lon + f * (b.lon - a.lon), s,
+            t: new Date(a.t.getTime() + f * (b.t - a.t))};
+  }
+  return path[path.length - 1];
 }
 function routePoints() {
   const A = AIRPORTS[S.from], B = AIRPORTS[S.to];
@@ -320,6 +424,7 @@ L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
 }).addTo(map);
 const apLayer = L.layerGroup().addTo(map), wpLayer = L.layerGroup().addTo(map);
 const line = L.polyline([], {color: "#121821", weight: 3, opacity: .85}).addTo(map);
+const profLayer = L.layerGroup().addTo(map);
 
 function drawAirports() {
   apLayer.clearLayers();
@@ -400,15 +505,32 @@ function addTyped() {
   S.wp.splice(insertIndex(p), 0, p);
   update(); fitRoute();
 }
-function drawSummary() {
-  const pts = routePoints();
-  let nm = 0;
-  for (let i = 0; i < pts.length - 1; i++) nm += gcDist(pts[i], pts[i + 1]);
-  const min = S.tas > 0 ? nm / S.tas * 60 : NaN;
-  const hm = Number.isFinite(min) ? `${Math.floor(min / 60)}:${pad(Math.round(min % 60))}` : "—";
-  $("sum").innerHTML = `<span>${t("dist")} <b>${Math.round(nm)} NM</b> (${Math.round(nm * 1.852)} km)</span>`
-    + `<span>${t("time")} <b>${hm}</b></span><span>${t("legs")} <b>${pts.length - 1}</b></span>`;
+const hhmmUtc = d => `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+function drawSummary(ok) {
   $("etd-hint").textContent = S.etd ? `${hhmmLocal(S.etd)} ${t("local")}` : "";
+  profLayer.clearLayers();
+  if (!ok || !S.etd) {
+    $("sum").innerHTML = "";
+    return;
+  }
+  const F = buildFlight();
+  const min = (F.eta - S.etd) / 60000;
+  const hm = `${Math.floor(min / 60)}:${pad(Math.round(min % 60))}`;
+  const fl = String(Math.round(F.vp.top / 100)).padStart(3, "0");
+  $("sum").innerHTML = `<span>${t("dist")} <b>${Math.round(F.total)} NM</b> (${Math.round(F.total * NM_KM)} km)</span>`
+    + `<span>${t("time")} <b>${hm}</b></span>`
+    + `<span>ETA <b>${hhmmUtc(F.eta)} UTC</b> (${hhmmLocal(F.eta)} ${t("local")})</span>`
+    + `<span>TOC <b>${Math.round(F.vp.sToc)} NM</b> · TOD <b>${Math.round(F.total - F.vp.sTod)} NM</b> ${t("beforeArr")}</span>`
+    + (F.vp.reached ? "" : `<span class="err">${t("notReached")} FL${fl}</span>`)
+    + `<span>${t("legs")} <b>${S.wp.length + 1}</b> · ${t("samples")} <b>${F.path.length}</b></span>`;
+  // Точките по траекторията и TOC/TOD на картата
+  F.path.forEach(p => L.circleMarker([p.lat, p.lon], {radius: 2, color: p.phase === "cruise" ? "#121821" : "#1F5FBF",
+    weight: 1, fillOpacity: 1, interactive: false}).addTo(profLayer));
+  for (const [lab, P] of [["TOC", F.toc], ["TOD", F.tod]]) {
+    L.marker([P.lat, P.lon], {keyboard: false, interactive: false,
+      icon: L.divIcon({className: "", iconAnchor: [-6, 8],
+        html: `<span class="ap-ic" style="background:#1F5FBF">${lab} ${hhmmUtc(P.t)}</span>`})}).addTo(profLayer);
+  }
 }
 function applyLang() {
   document.documentElement.lang = S.lang;
@@ -419,8 +541,8 @@ function applyLang() {
 }
 
 function update() {
-  validate();
-  drawAirports(); drawRoute(); drawWpList(); drawSummary();
+  const ok = validate();
+  drawAirports(); drawRoute(); drawWpList(); drawSummary(ok);
   writeUrl();
 }
 
