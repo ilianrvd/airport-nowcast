@@ -72,6 +72,10 @@ table.d tr.cruise td{background:#fff}table.d tr.climb td,table.d tr.desc td{back
 .na{color:#9AA3AF}
 .rgrid{display:grid;grid-template-columns:minmax(260px,340px) 1fr;gap:12px;align-items:start}
 @media (max-width:820px){.rgrid{grid-template-columns:1fr}}
+.end{font-size:13px;line-height:1.5;padding:6px 0;border-bottom:1px solid var(--line)}.end:last-of-type{border:0}
+.end h3{margin:0 0 3px;font-size:13px}.end h3 span{font-weight:400;color:var(--mut)}
+.end .row{display:flex;flex-wrap:wrap;gap:3px 10px}
+.end .row span b{font-family:'IBM Plex Mono',monospace;font-weight:600}
 .ov-st{display:inline-block;font-weight:700;font-size:13px;padding:3px 10px;border-radius:4px;margin-bottom:8px}
 .ov{list-style:none;margin:0;padding:0;font-size:13px;line-height:1.5}
 .ov li{padding:4px 0;border-bottom:1px solid var(--line)}.ov li:last-child{border:0}
@@ -138,7 +142,10 @@ footer{grid-column:1/-1;font-size:12px;color:var(--mut);line-height:1.6}
     <h2 id="h-res" class="status" style="font-weight:700;color:var(--ink)" data-t="resTitle">Данни по точките</h2>
     <p class="status" id="status" aria-live="polite"></p>
     <div class="rgrid">
-      <div class="card" id="overall"></div>
+      <div style="display:flex;flex-direction:column;gap:12px;min-width:0">
+        <div class="card" id="overall"></div>
+        <div class="card" id="ends"></div>
+      </div>
       <div class="card xs-wrap"><h2 data-t="xsTitle">Вертикален разрез</h2><div id="xs"></div><div class="xs-leg" id="xs-leg"></div></div>
     </div>
     <h2 class="status" style="font-weight:700;color:var(--ink);margin-top:14px" data-t="segTitle">По участъци</h2>
@@ -194,6 +201,9 @@ const T = {
     segPart: "участък", segClimb: "изкачване", segCruise: "ниво", segDesc: "снижение",
     lgTer: "релеф по пътя", lgTerC: "най-високо ±10 km", lgCloud2: "облак, 2 модела", lgCloud1: "облак, 1 модел",
     lgFzl: "0 °C", lgPath: "полет", lgIce: "обледяване",
+    endsTitle: "Летищата", dep: "Излитане", arr: "Кацане", endWind: "вятър", endVis: "вид.", endCig: "таван",
+    endHigh: "висок", endNoTable: "Летищната таблица не е достъпна", endOut: "извън хоризонта на таблицата (12 ч)",
+    endStale: "таблицата е от", endLink: "Летищна таблица →", endCol: "срок",
     loading: "Сваляне на данните…", failed: "Данните не можаха да се свалят",
     runInfo: "Изчислено", noModel: "няма данни",
     thS: "NM", thT: "UTC", thPh: "фаза", thAlt: "ft", thTer: "терен ft", thTerC: "терен ±10 km",
@@ -232,6 +242,9 @@ const T = {
     segPart: "segment", segClimb: "climb", segCruise: "level", segDesc: "descent",
     lgTer: "terrain on track", lgTerC: "highest ±10 km", lgCloud2: "cloud, 2 models", lgCloud1: "cloud, 1 model",
     lgFzl: "0 °C", lgPath: "flight", lgIce: "icing",
+    endsTitle: "Airports", dep: "Departure", arr: "Destination", endWind: "wind", endVis: "vis", endCig: "ceiling",
+    endHigh: "high", endNoTable: "The airport table is not available", endOut: "outside the table horizon (12 h)",
+    endStale: "table from", endLink: "Airport table →", endCol: "column",
     loading: "Downloading data…", failed: "Could not download the data",
     runInfo: "Calculated", noModel: "no data",
     thS: "NM", thT: "UTC", thPh: "phase", thAlt: "ft", thTer: "terrain ft", thTerC: "terrain ±10 km",
@@ -772,7 +785,76 @@ function segments(path) {
   return segs;
 }
 
-function drawResults(F) {
+// ---------------------------------------------------------------
+// Летищата в краищата (етап 6): от летищната таблица (table.json)
+// ---------------------------------------------------------------
+// На Pages таблицата е до route.html. Локално (file://) браузърът не
+// чете съседни файлове, затова се пробва и публичният адрес.
+const TABLE_URLS = ["table.json", "https://ilianrvd.github.io/airport-nowcast/table.json"];
+let TABLE = null, tableAt = 0;
+async function loadTable() {
+  if (TABLE && Date.now() - tableAt < 5 * 60000) return TABLE;
+  for (const u of TABLE_URLS.filter(u => location.protocol !== "file:" || u.startsWith("https:"))) {
+    try {
+      const r = await fetch(`${u}?t=${Math.floor(Date.now() / 60000)}`, {cache: "no-store"});
+      if (r.ok) { TABLE = await r.json(); tableAt = Date.now(); return TABLE; }
+    } catch (e) { /* следващият адрес */ }
+  }
+  return null;
+}
+// Колоната на таблицата за момента t: най-близката, ако е в рамките на 45 мин
+function tableCol(T, icao, t) {
+  const a = T && T.airports && T.airports[icao];
+  if (!a) return null;
+  let best = null, bd = Infinity;
+  for (const c of a.cols) {
+    const d = Math.abs(Date.parse(c.time) - t);
+    if (d < bd) { bd = d; best = c; }
+  }
+  return bd <= 45 * 60000 ? best : null;
+}
+// Степен като в летищната таблица: 2 червено, 1 жълто, 0 нищо
+function endSev(c) {
+  if (!c) return 0;
+  const wx = c.wx || "";
+  if ((fin(c.vis_m) && c.vis_m < 1000) || (fin(c.ceiling_ft) && c.ceiling_ft < 200) || /FG|TS|FZ/.test(wx)) return 2;
+  if ((fin(c.vis_m) && c.vis_m < 2000) || (fin(c.ceiling_ft) && c.ceiling_ft < 1500) || (fin(c.gust_kt) && c.gust_kt >= 25)
+      || (c.p_cig1500 || 0) >= 30 || (c.p_lt2000 || 0) >= 30 || (c.p_icing || 0) >= 30) return 1;
+  return 0;
+}
+function endBlock(T, icao, ts, lab) {
+  const c = tableCol(T, icao, ts);
+  const name = `${icao} ${AIRPORTS[icao][S.lang]}`;
+  if (!c) return {sev: 0, html: `<div class="end"><h3>${lab}: ${name} <span>${hhmmUtc(new Date(ts))} UTC</span></h3><span class="hint">${T ? t("endOut") : t("endNoTable")}</span></div>`};
+  const sv = endSev(c);
+  const tag = (x, k) => `<span class="tag ${k}">${x}</span>`;
+  const vis = fin(c.vis_m) ? (c.vis_m >= 10000 ? "≥10 km" : `${c.vis_m} m`) : "—";
+  const visK = fin(c.vis_m) ? (c.vis_m < 1000 ? "c-crit" : c.vis_m < 2000 ? "c-warn" : c.vis_m < 5000 ? "c-info" : "") : "";
+  const cig = fin(c.ceiling_ft) ? `${c.low_cloud || ""} ${c.ceiling_ft} ft` : (c.ceiling_txt || t("endHigh"));
+  const cigK = fin(c.ceiling_ft) ? (c.ceiling_ft < 200 ? "c-crit" : c.ceiling_ft < 1500 ? "c-warn" : c.ceiling_ft < 5000 ? "c-info" : "") : "";
+  const wind = c.wind_dir != null ? `${c.wind_dir === "VRB" ? "VRB" : String(c.wind_dir).padStart(3, "0")}/${pad(c.wind_kt ?? 0)}${c.gust_kt ? "G" + c.gust_kt : ""}` : "—";
+  const pr = [];
+  if (c.p_lt2000) pr.push(`P(&lt;2000 m) ${c.p_lt2000}%`);
+  if (c.p_cig1500) pr.push(`P(${t("endCig")} &lt;1500 ft) ${c.p_cig1500}%`);
+  if (c.p_icing) pr.push(`P(FZ) ${c.p_icing}%`);
+  return {sev: sv, html: `<div class="end"><h3>${lab}: ${name} <span>${hhmmUtc(new Date(ts))} UTC · ${t("endCol")} ${c.lead}</span></h3>`
+    + `<div class="row"><span>${t("endWind")} <b>${wind}</b></span><span>${t("endVis")} ${tag(vis, visK)}</span>`
+    + `<span>${t("endCig")} ${tag(cig, cigK)}</span>${c.wx ? `<span>${tag(c.wx, /FG|TS|FZ/.test(c.wx) ? "c-crit" : "c-info")}</span>` : ""}`
+    + `<span>T/Td <b>${c.t ?? "—"}/${c.td ?? "—"}</b></span></div>`
+    + (pr.length ? `<div class="hint">${pr.join(" · ")}</div>` : "") + `</div>`};
+}
+function drawEnds(F, T) {
+  const d = endBlock(T, S.from, S.etd.getTime(), t("dep")), a = endBlock(T, S.to, F.eta.getTime(), t("arr"));
+  let note = "";
+  if (T && T.created) {
+    const age = (Date.now() - Date.parse(T.created)) / 60000;
+    if (age > 60) note = `<p class="hint" style="margin:6px 0 0">${t("endStale")} ${hhmmUtc(new Date(T.created))} UTC</p>`;
+  }
+  $("ends").innerHTML = `<h2>${t("endsTitle")}</h2>${d.html}${a.html}${note}<p style="margin:8px 0 0;font-size:13px"><a href="index.html">${t("endLink")}</a></p>`;
+  return Math.max(d.sev, a.sev);
+}
+
+function drawResults(F, endSevMax = 0) {
   const P = F.path, of = Math.max(...P.map(p => (p.el || {}).of || 0));
   const na = "<span class=na>—</span>";
   const tagN = (n, crit) => n ? `<span class="tag ${n === of ? (crit ? "c-crit" : "c-warn") : "c-warn"}">${n}/${of}</span>` : "";
@@ -780,7 +862,7 @@ function drawResults(F) {
   const listR = (rs) => rs.length ? rs.map(r => `${tagN(r[2], true)} ${nmR(r)}`).join("<br>") : t("ovNone");
 
   // --- Обобщение
-  const worst = Math.max(...P.map(p => sev(p.el, p)));
+  const worst = Math.max(endSevMax, ...P.map(p => sev(p.el, p)));
   const st = [["c-info", t("stGrn")], ["c-warn", t("stYel")], ["c-crit", t("stRed")]][worst];
   const cr = P.filter(p => p.phase === "cruise" && p.el && p.el.wind);
   const crW = cr.length ? cr : P.filter(p => p.el && p.el.wind);
@@ -980,14 +1062,14 @@ async function calculate() {
   $("status").textContent = t("loading");
   $("go").disabled = true;
   try {
-    const F = await computeFlight();
+    const [F, T] = await Promise.all([computeFlight(), loadTable()]);
     if (seq !== calcSeq) return;
     const errs = Object.entries(F.errors).map(([k, e]) => `${k.toUpperCase()}: ${t("noModel")} (${e})`);
     const min = (F.eta - S.etd) / 60000;
     $("status").textContent = `${t("runInfo")} ${hhmmUtc(new Date())} UTC · ${t("time")} ${Math.floor(min / 60)}:${pad(Math.round(min % 60))} · ETA ${hhmmUtc(F.eta)} UTC`
       + (errs.length ? ` · ${errs.join(" · ")}` : "");
     drawData(F);
-    drawResults(F);
+    drawResults(F, drawEnds(F, T));
     drawSummary(true, F);
   } catch (e) {
     if (seq !== calcSeq) return;
