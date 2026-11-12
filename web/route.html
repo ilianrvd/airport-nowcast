@@ -59,6 +59,7 @@ input[aria-invalid=true]{border-color:var(--err);background:#FDF2F0}
 .sum{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:13px;margin-top:10px}
 .sum b{font-family:'IBM Plex Mono',monospace;font-weight:600}
 .res{grid-column:1/-1}
+main>*,.rgrid>*{min-width:0}
 .status{font-size:13px;color:var(--mut);margin:0 0 8px}
 .status.e{color:var(--err);font-weight:600}
 .tw{overflow-x:auto;border:1px solid #DDE1E7;border-radius:8px;background:#fff}
@@ -69,6 +70,18 @@ table.d td{font-family:'IBM Plex Mono',monospace}
 table.d td.ph{font-family:inherit;color:var(--mut);text-align:left}
 table.d tr.cruise td{background:#fff}table.d tr.climb td,table.d tr.desc td{background:#F5F8FD}
 .na{color:#9AA3AF}
+.rgrid{display:grid;grid-template-columns:minmax(260px,340px) 1fr;gap:12px;align-items:start}
+@media (max-width:820px){.rgrid{grid-template-columns:1fr}}
+.ov-st{display:inline-block;font-weight:700;font-size:13px;padding:3px 10px;border-radius:4px;margin-bottom:8px}
+.ov{list-style:none;margin:0;padding:0;font-size:13px;line-height:1.5}
+.ov li{padding:4px 0;border-bottom:1px solid var(--line)}.ov li:last-child{border:0}
+.ov b{font-family:'IBM Plex Mono',monospace;font-weight:600}
+.tag{display:inline-block;padding:0 5px;border-radius:3px;font-family:'IBM Plex Mono',monospace;font-size:12px}
+.c-crit{background:#F4C7C1;color:#6E160C}.c-warn{background:#FBE3B6;color:#5C3A00}.c-info{background:#DCE8F7;color:#163A6B}
+#xs{overflow-x:auto}#xs svg{width:100%;min-width:640px;height:auto;display:block}
+.xs-leg{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:11.5px;color:var(--mut);margin-top:6px}
+.xs-leg i{display:inline-block;width:14px;height:10px;vertical-align:-1px;margin-right:5px;border-radius:2px}
+table.d td.l{text-align:left;font-family:inherit}
 .note{grid-column:1/-1;font-size:12.5px;color:#3D2A00;background:#FDF3D7;border:1px solid #F0D58C;border-radius:8px;padding:9px 12px;line-height:1.45}
 footer{grid-column:1/-1;font-size:12px;color:var(--mut);line-height:1.6}
 .ap-ic{background:#121821;color:#fff;border-radius:4px;font:600 11px 'IBM Plex Mono',monospace;padding:2px 5px;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.3)}
@@ -124,7 +137,14 @@ footer{grid-column:1/-1;font-size:12px;color:var(--mut);line-height:1.6}
   <section class="res" aria-labelledby="h-res" id="res" hidden>
     <h2 id="h-res" class="status" style="font-weight:700;color:var(--ink)" data-t="resTitle">Данни по точките</h2>
     <p class="status" id="status" aria-live="polite"></p>
-    <div class="tw" id="tw"></div>
+    <div class="rgrid">
+      <div class="card" id="overall"></div>
+      <div class="card xs-wrap"><h2 data-t="xsTitle">Вертикален разрез</h2><div id="xs"></div><div class="xs-leg" id="xs-leg"></div></div>
+    </div>
+    <h2 class="status" style="font-weight:700;color:var(--ink);margin-top:14px" data-t="segTitle">По участъци</h2>
+    <div class="tw" id="seg"></div>
+    <details style="margin-top:12px"><summary class="status" style="cursor:pointer" data-t="rawTitle">Данни по точки</summary>
+      <div class="tw" id="tw"></div></details>
   </section>
 
   <p class="note" data-t="note">Прогнозата по маршрут е експериментална и не замества официалните прогнози за полети на ниски нива (GAMET) и предполетната метеорологична консултация.</p>
@@ -164,7 +184,16 @@ const T = {
     note: "Прогнозата по маршрут е експериментална и не замества официалните прогнози за полети на ниски нива (GAMET) и предполетната метеорологична консултация.",
     footer: "Експериментален продукт за обучение и проучване. Карта: © OpenStreetMap contributors. Модели: ICON-EU и ECMWF IFS през Open-Meteo (CC BY 4.0). Релеф: Open-Meteo Elevation API.",
     dist: "Разстояние", time: "Време на полета", legs: "Участъци", local: "местно",
-    resTitle: "Елементи по точките (временен изглед за проверка, етап 4)",
+    resTitle: "Прогноза по маршрута",
+    xsTitle: "Вертикален разрез", segTitle: "По участъци", rawTitle: "Данни по точки (за проверка)",
+    ovTitle: "Обобщение", stRed: "НЕБЛАГОПРИЯТНО", stYel: "ВНИМАНИЕ", stGrn: "БЕЗ ОСОБЕНОСТИ",
+    ovWind: "Среден вятър на нивото", ovComp: "попътен", ovHead: "насрещен", ovDrift: "Най-голям снос",
+    ovFzl: "Нулева изотерма (най-ниска)", ovAgl: "Най-малко над терена на нивото",
+    ovCloud: "В облак", ovIce: "Обледяване", ovVis: "Видимост на земята", ovNone: "няма",
+    ovModels: "n/2 = в колко от моделите (ICON, IFS)", nmFrom: "NM",
+    segPart: "участък", segClimb: "изкачване", segCruise: "ниво", segDesc: "снижение",
+    lgTer: "релеф по пътя", lgTerC: "най-високо ±10 km", lgCloud2: "облак, 2 модела", lgCloud1: "облак, 1 модел",
+    lgFzl: "0 °C", lgPath: "полет", lgIce: "обледяване",
     loading: "Сваляне на данните…", failed: "Данните не можаха да се свалят",
     runInfo: "Изчислено", noModel: "няма данни",
     thS: "NM", thT: "UTC", thPh: "фаза", thAlt: "ft", thTer: "терен ft", thTerC: "терен ±10 km",
@@ -193,7 +222,16 @@ const T = {
     note: "The route forecast is experimental and does not replace the official low-level forecasts (GAMET) or a pre-flight meteorological briefing.",
     footer: "Experimental product for training and research. Map: © OpenStreetMap contributors. Models: ICON-EU and ECMWF IFS via Open-Meteo (CC BY 4.0). Terrain: Open-Meteo Elevation API.",
     dist: "Distance", time: "Flight time", legs: "Legs", local: "local",
-    resTitle: "Elements at the points (temporary review view, stage 4)",
+    resTitle: "Route forecast",
+    xsTitle: "Vertical cross-section", segTitle: "By segment", rawTitle: "Data at the points (for checking)",
+    ovTitle: "Summary", stRed: "ADVERSE", stYel: "CAUTION", stGrn: "NO SIGNIFICANT WEATHER",
+    ovWind: "Mean wind at level", ovComp: "tailwind", ovHead: "headwind", ovDrift: "Largest drift",
+    ovFzl: "Freezing level (lowest)", ovAgl: "Lowest clearance at level",
+    ovCloud: "In cloud", ovIce: "Icing", ovVis: "Surface visibility", ovNone: "none",
+    ovModels: "n/2 = in how many models (ICON, IFS)", nmFrom: "NM",
+    segPart: "segment", segClimb: "climb", segCruise: "level", segDesc: "descent",
+    lgTer: "terrain on track", lgTerC: "highest ±10 km", lgCloud2: "cloud, 2 models", lgCloud1: "cloud, 1 model",
+    lgFzl: "0 °C", lgPath: "flight", lgIce: "icing",
     loading: "Downloading data…", failed: "Could not download the data",
     runInfo: "Calculated", noModel: "no data",
     thS: "NM", thT: "UTC", thPh: "phase", thAlt: "ft", thTer: "terrain ft", thTerC: "terrain ±10 km",
@@ -586,7 +624,9 @@ async function computeFlight() {
     for (const k of keys) {
       if (!data[k]) continue;
       const d = data[k][i], ts = p.t.getTime();
-      const a = atAlt(column(d, ts), p.alt);
+      const col = column(d, ts);
+      (p.cols = p.cols || {})[k] = col;
+      const a = atAlt(col, p.alt);
       p.m[k] = a && {...a, vis: tAt(d, "visibility", ts), ccl: tAt(d, "cloud_cover_low", ts),
                      pr: tAt(d, "precipitation", ts), sn: tAt(d, "snowfall", ts), fzl: tAt(d, "freezing_level_height", ts),
                      cape: tAt(d, "cape", ts), wx: tAt(d, "weather_code", ts), elev: d.elev};
@@ -679,6 +719,225 @@ function elements(p, sideVis) {
   return e;
 }
 
+// ---------------------------------------------------------------
+// Изход (етап 5): обобщение, участъци, вертикален разрез
+// ---------------------------------------------------------------
+const SEG_NM = 30;   // участъците на нивото — през около 30 NM
+const fmtW = w => `${String(Math.round(w.dir / 10) * 10 % 360 || 360).padStart(3, "0")}/${String(Math.round(w.spd)).padStart(2, "0")}`;
+const r100 = x => Math.round(x / 100) * 100;
+const ftOf = h => r100(h).toLocaleString("en-US").replace(/,/g, " ");
+
+// Степен: 2 = червено, 1 = жълто, 0 = нищо
+function sev(e, p) {
+  if (!e || !e.of) return 0;
+  const full = n => n && n === e.of;
+  if (full(e.cloud) || full(e.ice) || full(e.sfc1500) || (p.phase === "cruise" && fin(e.agl) && e.agl < 500)) return 2;
+  if (e.cloud || e.ice || e.sfc1500 || e.sfc5000 || (p.phase === "cruise" && fin(e.agl) && e.agl < 1000)) return 1;
+  return 0;
+}
+// Диапазони по разстояние, където условието е изпълнено: [[s0, s1, max n]]
+function ranges(path, f) {
+  const out = [];
+  let cur = null;
+  path.forEach((p, i) => {
+    const n = f(p);
+    if (n) {
+      if (!cur) cur = [p.s, p.s, n, p.t, p.t]; else { cur[1] = p.s; cur[2] = Math.max(cur[2], n); cur[4] = p.t; }
+    } else if (cur) { out.push(cur); cur = null; }
+  });
+  if (cur) out.push(cur);
+  // Прекъсвания под 10 NM се сливат — един случай, а не няколко къса
+  for (let i = out.length - 1; i > 0; i--) {
+    if (out[i][0] - out[i - 1][1] < 10) {
+      out[i - 1][1] = out[i][1]; out[i - 1][2] = Math.max(out[i - 1][2], out[i][2]); out[i - 1][4] = out[i][4];
+      out.splice(i, 1);
+    }
+  }
+  return out;
+}
+function segments(path) {
+  const segs = [];
+  let cur = null;
+  for (const p of path) {
+    const key = p.phase === "cruise" ? `c${Math.floor(p.s / SEG_NM)}` : p.phase;
+    if (!cur || cur.key !== key) { if (cur) segs.push(cur); cur = {key, phase: p.phase, pts: []}; }
+    cur.pts.push(p);
+  }
+  if (cur) segs.push(cur);
+  // Много къс последен участък на нивото се слива с предишния
+  for (let i = segs.length - 1; i > 0; i--) {
+    const a = segs[i - 1], b = segs[i];
+    if (a.phase === "cruise" && b.phase === "cruise" && b.pts.length < 3) { a.pts.push(...b.pts); segs.splice(i, 1); }
+  }
+  return segs;
+}
+
+function drawResults(F) {
+  const P = F.path, of = Math.max(...P.map(p => (p.el || {}).of || 0));
+  const na = "<span class=na>—</span>";
+  const tagN = (n, crit) => n ? `<span class="tag ${n === of ? (crit ? "c-crit" : "c-warn") : "c-warn"}">${n}/${of}</span>` : "";
+  const nmR = r => `${Math.round(r[0])}–${Math.round(r[1])} ${t("nmFrom")} (${hhmmUtc(r[3])}–${hhmmUtc(r[4])})`;
+  const listR = (rs) => rs.length ? rs.map(r => `${tagN(r[2], true)} ${nmR(r)}`).join("<br>") : t("ovNone");
+
+  // --- Обобщение
+  const worst = Math.max(...P.map(p => sev(p.el, p)));
+  const st = [["c-info", t("stGrn")], ["c-warn", t("stYel")], ["c-crit", t("stRed")]][worst];
+  const cr = P.filter(p => p.phase === "cruise" && p.el && p.el.wind);
+  const crW = cr.length ? cr : P.filter(p => p.el && p.el.wind);
+  let ovW = "";
+  if (crW.length) {
+    const u = crW.reduce((a, p) => a + p.el.wind.spd * Math.sin(p.el.wind.dir * D2R), 0) / crW.length;
+    const v = crW.reduce((a, p) => a + p.el.wind.spd * Math.cos(p.el.wind.dir * D2R), 0) / crW.length;
+    const along = crW.reduce((a, p) => a + p.el.wind.along, 0) / crW.length;
+    const dmax = crW.reduce((m, p) => Math.abs(p.el.wind.drift) > Math.abs(m) ? p.el.wind.drift : m, 0);
+    ovW = `<li>${t("ovWind")}: <b>${fmtW({dir: (Math.atan2(u, v) / D2R + 360) % 360, spd: Math.hypot(u, v)})}</b> · `
+      + `${along >= 0 ? t("ovComp") : t("ovHead")} <b>${Math.abs(Math.round(along))} kt</b></li>`
+      + `<li>${t("ovDrift")}: <b>${dmax >= 0 ? "R" : "L"}${Math.abs(Math.round(dmax))}°</b></li>`;
+  }
+  const fz = P.map(p => p.el && p.el.fzl).filter(fin);
+  const agl = cr.map(p => p.el.agl).filter(fin);
+  const min = (F.eta - S.etd) / 60000;
+  $("overall").innerHTML = `<h2>${t("ovTitle")}</h2><span class="ov-st ${st[0]}">${st[1]}</span><ul class="ov">`
+    + `<li>${S.from} ${hhmmUtc(S.etd)} → ${S.to} <b>${hhmmUtc(F.eta)} UTC</b> · ${Math.floor(min / 60)}:${pad(Math.round(min % 60))} · FL${String(S.fl).padStart(3, "0")}</li>`
+    + ovW
+    + `<li>${t("ovFzl")}: <b>${fz.length ? ftOf(Math.min(...fz)) + " ft" : "—"}</b></li>`
+    + `<li>${t("ovAgl")}: <b>${agl.length ? ftOf(Math.min(...agl)) + " ft" : "—"}</b></li>`
+    + `<li>${t("ovCloud")}:<br>${listR(ranges(P, p => p.el && p.el.cloud))}</li>`
+    + `<li>${t("ovIce")}:<br>${listR(ranges(P, p => p.el && p.el.ice))}</li>`
+    + `<li>${t("ovVis")} &lt; 1500 m:<br>${listR(ranges(P, p => p.el && p.el.sfc1500))}</li>`
+    + `<li>${t("ovVis")} &lt; 5000 m:<br>${listR(ranges(P, p => p.el && p.el.sfc5000))}</li>`
+    + `</ul><p class="hint" style="margin:8px 0 0">${t("ovModels")}</p>`;
+
+  // --- По участъци
+  const phName = {climb: t("segClimb"), cruise: t("segCruise"), desc: t("segDesc")};
+  let h = `<table class="d"><thead><tr><th class="l">${t("segPart")}</th><th>${t("thS")}</th><th>${t("thT")}</th><th>${t("thAlt")}</th>`
+    + `<th>${t("thW")}</th><th>${t("thComp")}</th><th>${t("thDrift")}</th><th>${t("thTemp")}</th><th>ISA</th><th>${t("thFzl")}</th>`
+    + `<th>${t("thAgl")}</th><th>${t("thCloud")}</th><th>${t("thIce")}</th><th>${t("thVisLev")}</th><th>${t("thVisSfc")}</th></tr></thead><tbody>`;
+  for (const g of segments(P)) {
+    const E = g.pts.map(p => p.el).filter(e => e && e.of);
+    const a = g.pts[0], b = g.pts[g.pts.length - 1];
+    const ws = E.filter(e => e.wind);
+    let wcell = na, comp = na, drift = na;
+    if (ws.length) {
+      const u = ws.reduce((x, e) => x + e.wind.spd * Math.sin(e.wind.dir * D2R), 0) / ws.length;
+      const v = ws.reduce((x, e) => x + e.wind.spd * Math.cos(e.wind.dir * D2R), 0) / ws.length;
+      const along = ws.reduce((x, e) => x + e.wind.along, 0) / ws.length;
+      const dr = ws.reduce((m, e) => Math.abs(e.wind.drift) > Math.abs(m) ? e.wind.drift : m, 0);
+      const spr = Math.max(0, ...ws.map(e => e.wind.spread).filter(fin));
+      wcell = fmtW({dir: (Math.atan2(u, v) / D2R + 360) % 360, spd: Math.hypot(u, v)}) + (spr >= SPREAD_KT ? ` <span title="${t("spread")}">±${Math.round(spr)}</span>` : "");
+      comp = (along >= 0 ? "+" : "−") + Math.abs(Math.round(along));
+      drift = (dr >= 0 ? "R" : "L") + Math.abs(Math.round(dr)) + "°";
+    }
+    const Ts = E.map(e => e.T).filter(fin), isas = E.map(e => e.isa).filter(fin), fzs = E.map(e => e.fzl).filter(fin);
+    const agls = g.phase === "cruise" ? E.map(e => e.agl).filter(fin) : [];
+    const mx = k => Math.max(0, ...E.map(e => e[k] || 0));
+    const vl = E.flatMap(e => Object.values(e.visLev).filter(fin)), vs = E.flatMap(e => Object.values(e.visSfc).filter(fin));
+    const vlMin = vl.length ? Math.min(...vl) : NaN, vsMin = vs.length ? Math.min(...vs) : NaN;
+    const aglMin = agls.length ? Math.min(...agls) : NaN;
+    const cls = vs => fin(vs) ? (vs < 1500 ? "c-crit" : vs < 5000 ? "c-warn" : "") : "";
+    const altR = g.phase === "cruise" ? ftOf(a.alt) : `${ftOf(a.alt)}→${ftOf(b.alt)}`;
+    h += `<tr class="${g.phase}"><td class="l">${phName[g.phase]}</td><td>${Math.round(a.s)}–${Math.round(b.s)}</td>`
+      + `<td>${hhmmUtc(a.t)}–${hhmmUtc(b.t)}</td><td>${altR}</td><td>${wcell}</td><td>${comp}</td><td>${drift}</td>`
+      + `<td>${Ts.length ? `${Math.round(Math.min(...Ts))}…${Math.round(Math.max(...Ts))}` : na}</td>`
+      + `<td>${isas.length ? (x => (x >= 0 ? "+" : "−") + Math.abs(x))(Math.round(isas.reduce((x, y) => x + y, 0) / isas.length)) : na}</td>`
+      + `<td>${fzs.length ? ftOf(Math.min(...fzs)) : na}</td>`
+      + `<td>${fin(aglMin) ? `<span class="tag ${aglMin < 500 ? "c-crit" : aglMin < 1000 ? "c-warn" : ""}">${ftOf(aglMin)}</span>` : na}</td>`
+      + `<td>${tagN(mx("cloud"), true) || na}</td><td>${tagN(mx("ice"), true) || na}</td>`
+      + `<td>${fin(vlMin) ? (vlMin === 0 ? `<span class="tag c-crit">${t("inCloud")}</span>` : `<span class="tag ${cls(vlMin)}">${vlMin}</span>`) : t("good")}</td>`
+      + `<td>${fin(vsMin) ? `<span class="tag ${cls(vsMin)}">${Math.round(vsMin)}</span>` : na}</td></tr>`;
+  }
+  $("seg").innerHTML = h + "</tbody></table>";
+
+  drawSection(F);
+}
+
+// Вертикален разрез: x — разстояние (NM), y — височина (ft AMSL)
+function drawSection(F) {
+  const P = F.path, total = F.total;
+  const Wd = 1000, Ht = 380, m = {l: 54, r: 14, t: 14, b: 46};
+  const terTop = Math.max(0, ...(F.terrain ? F.terrain.corridor.map(x => x.ft).filter(fin) : [0]));
+  const yMax = Math.ceil((Math.max(F.vp.top, terTop) + 3000) / 1000) * 1000;
+  const X = s => m.l + s / total * (Wd - m.l - m.r), Y = ft => Ht - m.b - ft / yMax * (Ht - m.t - m.b);
+  const keys = Object.keys(MODELS);
+  let g = "";
+  // облак по нивата: клетка = точка × слой между средите на съседните нива
+  P.forEach((p, i) => {
+    const x0 = X(i ? (P[i - 1].s + p.s) / 2 : p.s), x1 = X(i < P.length - 1 ? (P[i + 1].s + p.s) / 2 : p.s);
+    const lay = {};
+    for (const k of keys) {
+      const col = (p.cols || {})[k];
+      if (!col) continue;
+      const lv = col.filter(c => !c.sfc && fin(c.z));
+      lv.forEach((c, j) => {
+        const cl = fin(c.cc) ? c.cc >= CLOUD_CC : fin(c.RH) && c.RH >= CLOUD_RH;
+        if (!cl) return;
+        const zf = c.z / 0.3048;
+        const lo = j ? (lv[j - 1].z / 0.3048 + zf) / 2 : Math.max(zf - 600, (col[0].z || 0) / 0.3048);
+        const hi = j < lv.length - 1 ? (lv[j + 1].z / 0.3048 + zf) / 2 : zf + 600;
+        const key = c.p;
+        lay[key] = lay[key] || {n: 0, lo, hi};
+        lay[key].n++;
+      });
+    }
+    for (const L of Object.values(lay)) {
+      if (L.lo > yMax) continue;
+      g += `<rect x="${x0.toFixed(1)}" y="${Y(Math.min(L.hi, yMax)).toFixed(1)}" width="${(x1 - x0 + .5).toFixed(1)}" height="${(Y(L.lo) - Y(Math.min(L.hi, yMax))).toFixed(1)}" fill="#8A97A8" fill-opacity="${L.n >= 2 ? .55 : .25}"/>`;
+    }
+  });
+  // мрежа и оси
+  let axes = "";
+  for (let ft = 0; ft <= yMax; ft += yMax > 12000 ? 2000 : 1000) {
+    axes += `<line x1="${m.l}" x2="${Wd - m.r}" y1="${Y(ft)}" y2="${Y(ft)}" stroke="#E3E6EB"/>`
+      + `<text x="${m.l - 6}" y="${Y(ft) + 4}" text-anchor="end">${ft / 100 ? "FL" + String(ft / 100).padStart(3, "0") : "0"}</text>`;
+  }
+  const stepNm = total > 150 ? 50 : total > 60 ? 20 : 10;
+  for (let s = 0; s <= total + 1e-6; s += stepNm) {
+    const p = pointAt(P, Math.min(s, total));
+    axes += `<line x1="${X(s)}" x2="${X(s)}" y1="${Ht - m.b}" y2="${Ht - m.b + 4}" stroke="#9AA3AF"/>`
+      + `<text x="${X(s)}" y="${Ht - m.b + 16}" text-anchor="middle">${Math.round(s)}</text>`
+      + `<text x="${X(s)}" y="${Ht - m.b + 30}" text-anchor="middle" fill="#6B7280">${hhmmUtc(p.t)}</text>`;
+  }
+  axes += `<text x="${Wd - m.r}" y="${Ht - 4}" text-anchor="end" fill="#6B7280">NM · UTC</text>`;
+  // релеф
+  let ter = "";
+  if (F.terrain) {
+    const tr = F.terrain.track.filter(x => fin(x.ft));
+    ter = `<path d="M${X(0)},${Y(0)} ${tr.map(x => `L${X(x.s).toFixed(1)},${Y(x.ft).toFixed(1)}`).join(" ")} L${X(total)},${Y(0)} Z" fill="#B9A88F"/>`;
+    const byS = {};
+    F.terrain.corridor.forEach(x => { if (fin(x.ft)) byS[x.s.toFixed(3)] = Math.max(byS[x.s.toFixed(3)] ?? -1e9, x.ft); });
+    const cm = Object.entries(byS).map(([s, ft]) => [+s, ft]).sort((a, b) => a[0] - b[0]);
+    if (cm.length) ter += `<path d="${cm.map(([s, ft], i) => `${i ? "L" : "M"}${X(s).toFixed(1)},${Y(ft).toFixed(1)}`).join(" ")}" fill="none" stroke="#7A6A55" stroke-dasharray="4 3" stroke-width="1.2"/>`;
+  }
+  // нулева изотерма
+  const fz = P.filter(p => p.el && fin(p.el.fzl));
+  const fzl = fz.length ? `<path d="${fz.map((p, i) => `${i ? "L" : "M"}${X(p.s).toFixed(1)},${Y(Math.min(p.el.fzl, yMax)).toFixed(1)}`).join(" ")}" fill="none" stroke="#1F5FBF" stroke-width="1.5" stroke-dasharray="6 4"/>` : "";
+  // полет и обледяване по него
+  const path = `<path d="${P.map((p, i) => `${i ? "L" : "M"}${X(p.s).toFixed(1)},${Y(p.alt).toFixed(1)}`).join(" ")}" fill="none" stroke="#121821" stroke-width="2.5"/>`;
+  let ice = "";
+  P.forEach((p, i) => {
+    if (!i || !p.el || !p.el.ice) return;
+    const q = P[i - 1];
+    ice += `<line x1="${X(q.s)}" y1="${Y(q.alt)}" x2="${X(p.s)}" y2="${Y(p.alt)}" stroke="${p.el.ice === p.el.of ? "#C0392B" : "#E67E22"}" stroke-width="6" stroke-linecap="round" opacity=".85"/>`;
+  });
+  // вятър над пътя на нивото
+  let winds = "";
+  const every = Math.max(1, Math.round(P.length / 8));
+  P.forEach((p, i) => {
+    if (i % every || !p.el || !p.el.wind || p.phase !== "cruise") return;
+    winds += `<text x="${X(p.s)}" y="${Y(p.alt) - 9}" text-anchor="middle" class="w">${fmtW(p.el.wind)}</text>`;
+  });
+  $("xs").innerHTML = `<svg viewBox="0 0 ${Wd} ${Ht}" role="img" aria-label="${t("xsTitle")}" font-family="IBM Plex Mono, monospace" font-size="11" fill="#374151">
+    <style>.w{font-size:11px;fill:#121821;font-weight:600}</style>${axes}${g}${ter}${fzl}${ice}${path}${winds}
+    <line x1="${m.l}" x2="${Wd - m.r}" y1="${Ht - m.b}" y2="${Ht - m.b}" stroke="#9AA3AF"/></svg>`;
+  $("xs-leg").innerHTML = `<span><i style="background:#B9A88F"></i>${t("lgTer")}</span>`
+    + `<span><i style="border-top:2px dashed #7A6A55;height:0;margin-top:4px"></i>${t("lgTerC")}</span>`
+    + `<span><i style="background:#8A97A8;opacity:.55"></i>${t("lgCloud2")}</span>`
+    + `<span><i style="background:#8A97A8;opacity:.25"></i>${t("lgCloud1")}</span>`
+    + `<span><i style="border-top:2px dashed #1F5FBF;height:0;margin-top:4px"></i>${t("lgFzl")}</span>`
+    + `<span><i style="background:#121821;height:3px;margin-top:3px"></i>${t("lgPath")}</span>`
+    + `<span><i style="background:#C0392B"></i>${t("lgIce")}</span>`;
+}
+
 // Временен изглед за проверка (етапи 3–4); заменя се в етап 5
 function drawData(F) {
   const na = "<span class=na>—</span>";
@@ -728,6 +987,7 @@ async function calculate() {
     $("status").textContent = `${t("runInfo")} ${hhmmUtc(new Date())} UTC · ${t("time")} ${Math.floor(min / 60)}:${pad(Math.round(min % 60))} · ETA ${hhmmUtc(F.eta)} UTC`
       + (errs.length ? ` · ${errs.join(" · ")}` : "");
     drawData(F);
+    drawResults(F);
     drawSummary(true, F);
   } catch (e) {
     if (seq !== calcSeq) return;
