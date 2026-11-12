@@ -208,7 +208,7 @@ const T = {
     loading: "Сваляне на данните…", limit: "лимитът на Open-Meteo за минута е изчерпан — опитай пак след минута", failed: "Данните не можаха да се свалят",
     runInfo: "Изчислено", noModel: "няма данни",
     thS: "km", thT: "UTC", thPh: "фаза", thAlt: "ft", thTer: "терен ft", thTerC: "терен ±10 km",
-    thAgl: "над терена ±10 km", thRHmax: "max RH в колоната (hPa)", thComp: "попътен kt", thDrift: "снос", thFzl: "0 °C ft",
+    thAgl: "над терена ±10 km", thRHmax: "max RH в колоната (hPa)", ice: "лед", thComp: "попътен kt", thDrift: "снос", thFzl: "0 °C ft",
     thCloud: "в облак", thIce: "обледяване", thVisLev: "вид. ниво m", thVisSfc: "вид. земя m (мин)",
     inCloud: "облак", good: "добра", spread: "разлика между моделите",
     thW: "вятър", thTemp: "T °C", thRH: "RH %", thCC: "облак %", thVis: "вид. земя m", thGS: "GS kt",
@@ -252,7 +252,7 @@ const T = {
     loading: "Downloading data…", limit: "Open-Meteo per-minute limit reached — try again in a minute", failed: "Could not download the data",
     runInfo: "Calculated", noModel: "no data",
     thS: "km", thT: "UTC", thPh: "phase", thAlt: "ft", thTer: "terrain ft", thTerC: "terrain ±10 km",
-    thAgl: "above terrain ±10 km", thRHmax: "max RH in column (hPa)", thComp: "tailwind kt", thDrift: "drift", thFzl: "0 °C ft",
+    thAgl: "above terrain ±10 km", thRHmax: "max RH in column (hPa)", ice: "ice", thComp: "tailwind kt", thDrift: "drift", thFzl: "0 °C ft",
     thCloud: "in cloud", thIce: "icing", thVisLev: "vis level m", thVisSfc: "sfc vis m (min)",
     inCloud: "cloud", good: "good", spread: "model difference",
     thW: "wind", thTemp: "T °C", thRH: "RH %", thCC: "cloud %", thVis: "sfc vis m", thGS: "GS kt",
@@ -680,6 +680,12 @@ async function computeFlight() {
 const W = {icon: 0.5, ifs: 0.5};
 const VIS_SIDE_KM = 10;
 const CLOUD_CC = 50, CLOUD_RH = 95;        // в облак: облачност на нивото ≥ 50%, без нея RH ≥ 95%
+// Моделите дават RH спрямо вода. Под 0 °C облакът (лед) е наситен спрямо лед, при
+// RH спрямо вода около 82% при −20 °C — затова за облака под 0 °C се гледа RH спрямо лед.
+// За обледяването остава RH спрямо вода (преохладени капки).
+const esW = T => 6.112 * Math.exp(17.67 * T / (T + 243.5));
+const esI = T => 6.112 * Math.exp(22.46 * T / (T + 272.62));
+const rhCloud = (T, RH) => fin(T) && T < 0 ? RH * esW(T) / esI(T) : RH;
 const ICE_T = [-20, 0], ICE_RH = 90;       // риск от обледяване: 0…−20 °C и (облак или RH ≥ 90%)
 const VIS_THR = [5000, 1500];              // прагове за VFR, m
 const SPREAD_KT = 10, SPREAD_T = 3;        // голяма разлика между моделите
@@ -724,7 +730,7 @@ function elements(p, sideVis) {
   e.agl = fin(ter) ? p.alt - ter : NaN;
 
   // Облак на нивото и обледяване — по модели
-  const inCloud = m => m.below ? false : fin(m.cc) ? m.cc >= CLOUD_CC : fin(m.RH) && m.RH >= CLOUD_RH;
+  const inCloud = m => m.below ? false : fin(m.cc) ? m.cc >= CLOUD_CC : fin(m.RH) && rhCloud(m.T, m.RH) >= CLOUD_RH;
   const icing = m => !m.below && fin(m.T) && m.T <= ICE_T[1] && m.T >= ICE_T[0]
                       && (inCloud(m) || (fin(m.RH) && m.RH >= ICE_RH));
   e.cloud = ks.filter(k => inCloud(p.m[k])).length;
@@ -947,7 +953,7 @@ function drawChart(F) {
     for (const k of Object.keys(p.cols || {})) {
       const lv = p.cols[k].filter(c => !c.sfc && fin(c.z));
       lv.forEach((c, j) => {
-        if (!(fin(c.RH) && c.RH >= CLOUD_RH)) return;
+        if (!(fin(c.RH) && rhCloud(c.T, c.RH) >= CLOUD_RH)) return;
         const zf = c.z / 0.3048;
         const lo = j ? (lv[j - 1].z / 0.3048 + zf) / 2 : zf - 500, hi = j < lv.length - 1 ? (lv[j + 1].z / 0.3048 + zf) / 2 : zf + 500;
         (lay[c.p] = lay[c.p] || {n: 0, lo, hi}).n++;
@@ -1108,8 +1114,8 @@ function drawData(F) {
       + `<td>${r0(vmin(e.visSfc))}</td><td>${agree(e.sfc5000, e.of, false)}</td><td>${agree(e.sfc1500, e.of, true)}</td>`
       + `<td>${r0((p.m.icon || {}).RH)}</td><td>${r0((p.m.ifs || {}).RH)}</td>`
       + `<td>${(() => { const c = Object.values(p.cols || {}).flatMap(col => col.filter(x => !x.sfc && fin(x.RH)));
-                         if (!c.length) return na; const m = c.reduce((a, b) => b.RH > a.RH ? b : a);
-                         return `${Math.round(m.RH)} @${m.p}`; })()}</td></tr>`;
+                         if (!c.length) return na; const m = c.reduce((a, b) => rhCloud(b.T, b.RH) > rhCloud(a.T, a.RH) ? b : a);
+                         return `${Math.round(m.RH)} (${t("ice")} ${Math.round(rhCloud(m.T, m.RH))}) @${m.p}, ${Math.round(m.T)}°`; })()}</td></tr>`;
   }
   $("tw").innerHTML = h + "</tbody></table>";
 }
