@@ -1368,7 +1368,7 @@ function drawChart(F) {
     + `<rect id="xs-hit" x="${mL}" y="${yTop}" width="${pw}" height="${Ht - yTop}" fill="transparent"/>`;
 
   $("xs").innerHTML = `<div class="xs-box"><svg viewBox="0 0 ${Wd} ${Ht}" role="img" aria-label="${t("xsTitle")}">
-    <style>text{font-feature-settings:"locl" 0}.ax{font:11px 'IBM Plex Mono',monospace;fill:#6B7280}.lab{font:500 12px 'IBM Plex Sans',sans-serif;fill:#374151}.val{font:500 11.5px 'IBM Plex Mono',monospace}text{font-family:'IBM Plex Mono',monospace;font-size:11px}</style>
+    <style>svg text{font-feature-settings:"locl" 0 !important;font-variant-ligatures:none}.ax{font:11px 'IBM Plex Mono',monospace;fill:#6B7280}.lab{font:500 12px 'IBM Plex Sans',sans-serif;fill:#374151}.val{font:500 11.5px 'IBM Plex Mono',monospace}text{font-family:'IBM Plex Mono',monospace;font-size:11px}</style>
     ${defs}${g}${strip}${hover}</svg><div class="xs-tip" id="xs-tip" hidden></div></div>`;
   $("xs-leg").innerHTML = (of > 1 ? `<span><i style="background:${C_CLOUD};opacity:.45;border-radius:6px"></i>${t("lgCloud2")}</span>`
     + `<span><i style="background:${C_CLOUD};opacity:.22;border-radius:6px"></i>${t("lgCloud1")}</span>`
