@@ -46,6 +46,15 @@ input[aria-invalid=true]{border-color:var(--err);background:#FDF2F0}
 .mono{font-family:'IBM Plex Mono',monospace}
 .hint{font-size:11.5px;font-weight:400;color:var(--mut)}
 .err{font-size:12px;font-weight:600;color:var(--err)}
+.cb{position:relative}
+.cb-list{position:absolute;z-index:1100;left:0;width:max(100%,340px);top:calc(100% + 4px);max-height:300px;overflow:auto;background:#fff;border:1px solid #C9CED6;border-radius:8px;box-shadow:0 10px 24px rgba(18,24,33,.14);padding:4px}
+.cb-opt{display:grid;grid-template-columns:52px 1fr auto;gap:8px;align-items:baseline;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:13.5px;font-weight:400;color:var(--ink)}
+.cb-opt .c{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600}
+.cb-opt .e{font-size:11.5px;color:var(--mut);white-space:nowrap;font-family:'IBM Plex Mono',monospace}
+.cb-opt[aria-selected=true],.cb-opt:hover{background:#EEF3FA}
+.cb-sep{font-size:11px;color:var(--mut);padding:6px 8px 2px;text-transform:uppercase;letter-spacing:.4px}
+.af-ic{width:9px!important;height:9px!important;margin:-4.5px 0 0 -4.5px!important;border-radius:50%;background:#fff;border:2px solid #6B7280}
+.pop-acts{display:flex;flex-direction:column;gap:5px;margin-top:6px}.pop-acts .btn{padding:0 10px;min-height:30px}
 .wps{grid-column:1/-1;display:flex;flex-direction:column;gap:6px}
 .wps .head{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;font-weight:600;color:var(--mut)}
 .wp{display:grid;grid-template-columns:28px 1fr 34px;gap:6px;align-items:center}
@@ -116,8 +125,9 @@ footer{grid-column:1/-1;font-size:12px;color:var(--mut);line-height:1.6}
   <section class="card" aria-labelledby="h-flight">
     <h2 id="h-flight" data-t="flight">Полет</h2>
     <form id="f" novalidate>
-      <label><span data-t="from">Излитане</span><select id="from"></select></label>
-      <label><span data-t="to">Кацане</span><select id="to"></select></label>
+      <label><span data-t="from">Излитане</span><div class="cb"><input id="from" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="from-list" aria-autocomplete="list"><div class="cb-list" id="from-list" role="listbox" hidden></div></div></label>
+      <label><span data-t="to">Кацане</span><div class="cb"><input id="to" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="to-list" aria-autocomplete="list"><div class="cb-list" id="to-list" role="listbox" hidden></div></div></label>
+      <span class="hint full" data-t="placeHint">Летище, площадка (име или код) или координати; или клик на картата.</span>
       <label class="full"><span data-t="etd">Време на излитане (UTC)</span>
         <input id="etd" type="datetime-local" step="300">
         <span class="hint" id="etd-hint"></span></label>
@@ -126,7 +136,7 @@ footer{grid-column:1/-1;font-size:12px;color:var(--mut);line-height:1.6}
       <label><span data-t="fl">Полетно ниво (FL)</span>
         <input id="fl" type="number" inputmode="numeric" min="10" max="195" step="5" class="mono"></label>
       <div class="wps">
-        <div class="head"><span data-t="wps">Междинни точки</span><span class="hint" data-t="wpsHint">клик на картата добавя точка</span></div>
+        <div class="head"><span data-t="wps">Междинни точки</span><span class="hint" data-t="wpsHint">клик на картата → изберете действие</span></div>
         <div id="wp-list"></div>
         <label><span class="hint" data-t="wpAddLabel">или координати: 42.70 23.40 · 4242N02324E</span>
           <span style="display:flex;gap:6px"><input id="wp-new" class="mono" autocomplete="off" spellcheck="false">
@@ -156,7 +166,7 @@ footer{grid-column:1/-1;font-size:12px;color:var(--mut);line-height:1.6}
   </section>
 
   <p class="note" data-t="note">Прогнозата по маршрут е експериментална и не замества официалните прогнози за полети на ниски нива (GAMET) и предполетната метеорологична консултация.</p>
-  <footer data-t="footer">Експериментален продукт за обучение и проучване. Карта: © OpenStreetMap contributors, OpenTopoMap, Esri. Модел: ICON-EU (DWD) през Open-Meteo (CC BY 4.0). Релеф: Open-Meteo Elevation API.</footer>
+  <footer data-t="footer">Експериментален продукт за обучение и проучване. Карта: © OpenStreetMap contributors, OpenTopoMap, Esri. Модел: ICON-EU (DWD) през Open-Meteo (CC BY 4.0). Площадки: OurAirports (обществено достояние). Релеф: Open-Meteo Elevation API.</footer>
 </main>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -173,6 +183,131 @@ const AIRPORTS = {
   LBPD: {bg: "Пловдив",      en: "Plovdiv",        lat: 42.0678, lon: 24.8508, elev: 182},
   LBGO: {bg: "Г. Оряховица", en: "G. Oryahovitsa", lat: 43.1514, lon: 25.7129, elev: 87},
 };
+/* AIRFIELDS:BEGIN */
+const AIRFIELDS = [   // [код, име БГ, име EN, lat, lon, височина m, най-известно]
+  ["LBAM", "Алфа Метал (Габрово)", "Alfa-Metal", 42.9487, 25.3589, 618, 1],
+  ["LBWB", "Балчик", "Balchik", 43.4238, 28.1813, 201, 1],
+  ["LBBA", "Баховица", "Bahovitsa", 43.2061, 24.6556, 390, 1],
+  ["LBZM", "Белозем", "Air Belozem", 42.2166, 25.0681, 157, 1],
+  ["LBBB", "Белчински бани", "Belchinski Bani", 42.3747, 23.3925, null, 1],
+  ["LBBL", "Благоево", "Blagoevo", 43.4555, 26.4317, 361, 1],
+  ["LBBO", "Бохот", "Bohot", 43.3069, 24.6917, 354, 1],
+  ["LBBR", "Брезник", "Breznik", 42.6933, 22.8966, 213, 1],
+  ["LBBZ", "Бъзън", "Bazan", 43.7284, 26.1197, 176, 1],
+  ["LBBQ", "Бяла", "Byala", 43.4635, 25.7116, 64, 1],
+  ["LBVD", "Видин (Смърдан)", "Vidin Smurdan", 44.0224, 22.8161, 61, 1],
+  ["LBVR", "Враца", "Vratsa", 43.2559, 23.5327, 285, 1],
+  ["LBGI", "Горски извор", "Gorski Izvor", 42.0358, 25.4083, 50, 1],
+  ["LBGD", "Градище", "Gradishte", 43.3335, 26.8539, 284, 1],
+  ["LBGR", "Гривица", "Grivitsa", 43.4149, 24.7337, 280, 1],
+  ["LBDA", "Даскал Атанасово", "Daskal-Atanasovo", 42.3213, 25.8937, 129, 1],
+  ["LBDM", "Две могили", "Dve Mogili", 43.6065, 25.8907, 255, 1],
+  ["LBDB", "Долна баня", "Dolna Banya", 42.3091, 23.8202, 542, 1],
+  ["LBDR", "Драгановци", "Draganovtsi", 42.943, 25.1695, null, 1],
+  ["LBRD", "Ерден", "Erden", 43.4992, 23.3047, 188, 1],
+  ["LBHT", "Ихтиман", "Ihtiman", 42.4219, 23.7672, 644, 1],
+  ["LBKJ", "Кайнарджа", "Kaynardzha", 43.97, 27.4698, 175, 1],
+  ["LBKL", "Калвача", "Kalvacha", 42.586, 25.427, 330, 1],
+  ["LBLS", "Лесново", "Lesnovo", 42.6325, 23.6501, 556, 1],
+  ["LBMV", "Малево", "Malevo", 41.8718, 25.6048, 183, 1],
+  ["LBMA", "Марица", "Maritsa", 42.2652, 24.7205, 192, 1],
+  ["LBMO", "Монтана", "Montana", 43.3826, 23.2632, 237, 1],
+  ["LBPN", "Паничарево", "Panicharevo", 42.2763, 22.9908, 552, 1],
+  ["LBPR", "Приморско", "Primorsko", 42.2596, 27.7038, 4, 1],
+  ["LBRS", "Русе (Щръклево)", "Ruse", 43.6948, 26.0567, 187, 1],
+  ["LBSP", "Сапарева баня", "Sapareva Banya", 42.3113, 23.2461, 676, 1],
+  ["LBSL", "Сливен (Бършен)", "Sliven Barshen", 42.6453, 26.3588, 200, 1],
+  ["LBSA", "Сливница", "Slivnitsa", 42.8441, 23.0142, 618, 1],
+  ["LBSB", "Слънчев бряг", "Slanchev Bryag (Sunny Beach)", 42.7266, 27.6245, 47, 1],
+  ["LBSW", "София Запад (Дрен)", "Sofia West", 42.4442, 22.9835, 639, 1],
+  ["LBSZ", "Стара Загора", "Stara Zagora", 42.3767, 25.655, 170, 1],
+  ["LBSE", "Старо селище", "Staro Selishte", 43.6502, 26.7541, 306, 1],
+  ["LBST", "Стряма (Баня)", "Stryama", 42.5379, 24.8274, 279, 1],
+  ["LBTS", "Цалапица", "Tsalapitsa", 42.1887, 24.5357, 192, 1],
+  ["BG-0102", "", "Asenovgrad", 42.0099, 24.9264, 281, 0],
+  ["BG-0067", "", "Aytos", 42.6773, 27.2547, 76, 0],
+  ["BG-0069", "", "Bedzhene", 43.4478, 27.2769, null, 0],
+  ["BG-0159", "", "Belitsa", 43.9428, 26.6604, 128, 0],
+  ["BG-0078", "", "Belozem SSA", 42.2144, 25.0588, 149, 0],
+  ["BG-0160", "", "Borisovo", 43.9237, 26.247, 55, 0],
+  ["BG-0065", "", "Borovan", 43.4269, 23.7704, null, 0],
+  ["BG-0039", "", "Branichevo", 43.6662, 27.1002, null, 0],
+  ["BG-0063", "", "Brenitsa", 43.4415, 24.1404, null, 0],
+  ["BG-0184", "", "Doyrantsi", 43.6106, 27.1531, 275, 0],
+  ["BG-0046", "", "Dzhulyunitsa", 43.5858, 25.6144, null, 0],
+  ["BG-0117", "", "Ekzarh Yosif", 43.6262, 25.7899, 189, 0],
+  ["LB35", "", "Golyama Smolnitsa", 43.6273, 27.6952, 247, 0],
+  ["BG-0081", "", "Kalugerene", 43.9066, 26.8666, null, 0],
+  ["LB42", "", "Kamenets", 43.3273, 25.0034, 128, 0],
+  ["BG-0062", "", "Knezha", 43.5462, 24.0948, 151, 0],
+  ["BG-0050", "", "Koynare", 43.3711, 24.1304, null, 0],
+  ["BG-0024", "", "Krivnya Agricultural", 43.6631, 26.4223, 300, 0],
+  ["BG-0070", "", "Krivodol", 43.375, 23.5104, 254, 0],
+  ["BG-0157", "", "Krushari", 43.8318, 27.7628, 217, 0],
+  ["LB33", "", "Leskovo", 43.7242, 27.6908, 213, 0],
+  ["LB31", "", "Levski", 43.3694, 25.1491, 46, 0],
+  ["BG-0068", "", "Lozarevo", 42.7574, 26.9003, 312, 0],
+  ["BG-0057", "", "Lozen", 43.302, 25.8628, 229, 0],
+  ["LB29", "", "Maslarevo", 43.4054, 25.474, 106, 0],
+  ["BG-0071", "", "Medovnitsa", 43.6479, 22.7976, 294, 0],
+  ["BG-0045", "", "Mogilishte", 43.4916, 28.352, 129, 0],
+  ["BG-0083", "", "Moskovets", 42.6584, 24.6838, null, 0],
+  ["BG-0084", "", "Nedelevo", 42.3388, 24.6102, null, 0],
+  ["BG-0043", "", "Nikola Kozlevo", 43.5534, 27.2228, null, 0],
+  ["BG-0090", "", "Nikolovo", 43.8617, 26.1328, 153, 0],
+  ["BG-0088", "", "Omarchevo", 42.468, 26.1441, null, 0],
+  ["BG-0037", "", "Orlyak", 43.6349, 27.3969, 269, 0],
+  ["BG-0023", "", "Ostrovo", 43.6939, 26.58, null, 0],
+  ["BG-0110", "", "Pet Mogili", 42.3226, 26.0623, 149, 0],
+  ["BG-0091", "", "Pirgovo", 43.7063, 25.8949, 172, 0],
+  ["BG-0048", "", "Pishtigovo", 42.2302, 24.4396, null, 0],
+  ["BG-0089", "", "Popovo", 43.3596, 26.2386, 227, 0],
+  ["BG-0047", "", "Rakovski", 42.2935, 24.9471, 185, 0],
+  ["BG-0016", "", "Raykova Mogila", 41.816, 26.3041, 210, 0],
+  ["BG-0077", "", "Ruen", 42.8016, 27.2939, null, 0],
+  ["BG-0009", "", "Selanovtsi", 43.654, 24.0107, 163, 0],
+  ["BG-0042", "", "Selskostopansko", 43.2365, 27.0457, 122, 0],
+  ["BG-0080", "", "Selskostopansko", 43.4032, 25.8523, null, 0],
+  ["BG-0055", "", "Shumen", 43.287, 26.9423, 232, 0],
+  ["BG-0072", "", "Slatina", 43.2723, 24.7395, 361, 0],
+  ["BG-0059", "", "Slavovitsa", 43.5809, 24.4472, null, 0],
+  ["BG-0123", "", "Sokolare", 43.4496, 23.8574, 174, 0],
+  ["LB36", "", "Sokolovo", 43.4756, 28.1035, 232, 0],
+  ["BG-0053", "", "Staroseltsi", 43.5315, 24.2968, null, 0],
+  ["LB30", "", "Stryama", 42.2817, 24.867, 171, 0],
+  ["BG-0038", "", "Suvorovo", 43.3587, 27.5831, 310, 0],
+  ["BG-0005", "", "Svishtov", 43.6182, 25.2837, 18, 0],
+  ["LB18", "", "Tenevo", 42.3464, 26.5739, 119, 0],
+  ["BG-0066", "", "Tervel", 43.7178, 27.4401, 258, 0],
+  ["BG-0003", "", "Trastikovo", 42.4146, 27.2939, 12, 0],
+  ["BG-0086", "", "Vabel", 43.6641, 24.9132, 206, 0],
+  ["BG-0075", "", "Vetrino", 43.3117, 27.4153, 210, 0],
+  ["BG-0004", "", "Zagortsi", 42.4013, 27.0706, 112, 0],
+  ["BG-0079", "", "Zavet", 43.7443, 26.6615, 269, 0],
+  ["LBIA", "Безмер", "Bezmer", 42.4549, 26.3522, 155, 0],
+  ["LBPG", "Граф Игнатиево", "Graf Ignatievo", 42.2904, 24.714, 58, 0],
+  ["LBPL", "Долна Митрополия", "Dolna Mitropoliya", 43.4518, 24.5024, 101, 0]
+];
+/* AIRFIELDS:END */
+const AF_BY = Object.fromEntries(AIRFIELDS.map(f => [f[0], f]));
+
+// Място по идентификатор: главно летище, площадка от списъка или "lat,lon"
+const ELEV = {};   // височини на точки от картата (Elevation API), m
+function place(id) {
+  if (AIRPORTS[id]) { const a = AIRPORTS[id]; return {id, main: true, code: id, short: id, name: a[S.lang], lat: a.lat, lon: a.lon, elev: a.elev}; }
+  const f = AF_BY[id];
+  if (f) return {id, main: false, code: f[0], short: /^LB[A-Z]{2}$/.test(f[0]) ? f[0] : (f[S.lang === "bg" && f[1] ? 1 : 2]).slice(0, 12),
+                 name: S.lang === "bg" && f[1] ? f[1] : f[2], lat: f[3], lon: f[4], elev: f[5] ?? ELEV[id] ?? null};
+  const c = parseCoord(id);
+  if (c) return {id, main: false, coord: true, code: "", short: fmtCoord(c), name: fmtCoord(c), lat: c[0], lon: c[1], elev: ELEV[id] ?? null};
+  return null;
+}
+const placeLabel = p => p ? (p.coord ? p.name : `${p.code} · ${p.name}`) : "";
+const coordId = c => `${r4(c[0])},${r4(c[1])}`;
+// Транслитерация за търсене (пишеш „Шумен“ — намира „Shumen“)
+const TR = {а:"a",б:"b",в:"v",г:"g",д:"d",е:"e",ж:"zh",з:"z",и:"i",й:"y",к:"k",л:"l",м:"m",н:"n",о:"o",п:"p",р:"r",с:"s",т:"t",у:"u",ф:"f",х:"h",ц:"ts",ч:"ch",ш:"sh",щ:"sht",ъ:"a",ь:"y",ю:"yu",я:"ya"};
+const norm = x => (x || "").toLowerCase().replace(/[а-я]/g, ch => TR[ch] ?? ch).replace(/[^a-z0-9]/g, "");
+
 const HORIZON_H = 3;           // излитане до 3 ч напред
 const DEF = {from: "LBSF", to: "LBWN", tas: 100, fl: 65};
 const LIM = {tas: [40, 250], fl: [10, 195]};
@@ -186,11 +321,11 @@ const T = {
     viewAirports: "Летища", viewRoute: "Прогноза по маршрут", flight: "Полет",
     from: "Излитане", to: "Кацане", etd: "Време на излитане (UTC)",
     tas: "Крейсерска скорост (TAS, kt)", fl: "Полетно ниво (FL)",
-    wps: "Междинни точки", wpsHint: "клик на картата добавя точка",
+    wps: "Междинни точки", wpsHint: "клик на картата → изберете действие",
     wpAddLabel: "или координати: 42.70 23.40 · 4242N02324E", add: "Добави",
     calc: "Изчисли", remove: "Премахни", noWps: "Няма — права линия между летищата.",
     note: "Прогнозата по маршрут е експериментална и не замества официалните прогнози за полети на ниски нива (GAMET) и предполетната метеорологична консултация.",
-    footer: "Експериментален продукт за обучение и проучване. Карта: © OpenStreetMap contributors, OpenTopoMap, Esri. Модел: ICON-EU (DWD) през Open-Meteo (CC BY 4.0). Релеф: Open-Meteo Elevation API.",
+    footer: "Експериментален продукт за обучение и проучване. Карта: © OpenStreetMap contributors, OpenTopoMap, Esri. Модел: ICON-EU (DWD) през Open-Meteo (CC BY 4.0). Площадки: OurAirports (обществено достояние). Релеф: Open-Meteo Elevation API.",
     dist: "Разстояние", time: "Време на полета", legs: "Участъци", local: "местно",
     resTitle: "Прогноза по маршрута",
     xsTitle: "Разрез и елементи по маршрута", segTitle: "По участъци", rawTitle: "Данни по точки (за проверка)",
@@ -224,18 +359,21 @@ const T = {
     errTas: `TAS между ${LIM.tas[0]} и ${LIM.tas[1]} kt.`,
     errFl: `FL между ${String(LIM.fl[0]).padStart(3, "0")} и ${LIM.fl[1]}.`,
     errCoord: "Неразпознати координати.", errOutside: "Точката е далеч извън България.",
-    wpN: "Точка",
+    wpN: "Точка", placeHint: "Летище, площадка (име или код) или координати; или клик на картата.",
+    setFrom: "Излитане оттук", setTo: "Кацане тук", addWp: "Междинна точка", depShort: "ИЗЛ", arrShort: "КАЦ",
+    grpMain: "Летища", grpAf: "Площадки", noMatch: "Няма съвпадение", coordOpt: "Точка",
+    fromModel: "от модела ICON", lowCloud: "ниска облачност",
   },
   en: {
     title: "Route forecast", warn: "EXPERIMENTAL · NOT FOR OPERATIONAL USE",
     viewAirports: "Airports", viewRoute: "Route forecast", flight: "Flight",
     from: "Departure", to: "Destination", etd: "Departure time (UTC)",
     tas: "Cruise speed (TAS, kt)", fl: "Flight level (FL)",
-    wps: "Waypoints", wpsHint: "click on the map to add a point",
+    wps: "Waypoints", wpsHint: "click the map → choose an action",
     wpAddLabel: "or coordinates: 42.70 23.40 · 4242N02324E", add: "Add",
     calc: "Calculate", remove: "Remove", noWps: "None — direct line between the airports.",
     note: "The route forecast is experimental and does not replace the official low-level forecasts (GAMET) or a pre-flight meteorological briefing.",
-    footer: "Experimental product for training and research. Map: © OpenStreetMap contributors, OpenTopoMap, Esri. Model: ICON-EU (DWD) via Open-Meteo (CC BY 4.0). Terrain: Open-Meteo Elevation API.",
+    footer: "Experimental product for training and research. Map: © OpenStreetMap contributors, OpenTopoMap, Esri. Model: ICON-EU (DWD) via Open-Meteo (CC BY 4.0). Airfields: OurAirports (public domain). Terrain: Open-Meteo Elevation API.",
     dist: "Distance", time: "Flight time", legs: "Legs", local: "local",
     resTitle: "Route forecast",
     xsTitle: "Cross-section and elements along the route", segTitle: "By segment", rawTitle: "Data at the points (for checking)",
@@ -269,7 +407,10 @@ const T = {
     errTas: `TAS between ${LIM.tas[0]} and ${LIM.tas[1]} kt.`,
     errFl: `FL between ${String(LIM.fl[0]).padStart(3, "0")} and ${LIM.fl[1]}.`,
     errCoord: "Coordinates not recognised.", errOutside: "The point is far outside Bulgaria.",
-    wpN: "Point",
+    wpN: "Point", placeHint: "Airport, airfield (name or code) or coordinates; or click the map.",
+    setFrom: "Depart from here", setTo: "Land here", addWp: "Waypoint", depShort: "DEP", arrShort: "ARR",
+    grpMain: "Airports", grpAf: "Airfields", noMatch: "No match", coordOpt: "Point",
+    fromModel: "from ICON model", lowCloud: "low cloud",
   },
 };
 
@@ -402,10 +543,10 @@ function verticalProfile(total, depElev, arrElev, cruiseFt, tas) {
 
 // Цял профил с часовете. windAt → {u, v} (kt) или null.
 function buildFlight(windAt = null) {
-  const A = AIRPORTS[S.from], B = AIRPORTS[S.to];
+  const A = place(S.from), B = place(S.to);
   const path = samplePath(routePoints());
   const total = path[path.length - 1].s;
-  const depFt = A.elev / 0.3048, arrFt = B.elev / 0.3048, cruise = S.fl * 100;
+  const depFt = (A.elev ?? 0) / 0.3048, arrFt = (B.elev ?? 0) / 0.3048, cruise = S.fl * 100;
   const vp = verticalProfile(total, depFt, arrFt, Math.max(cruise, Math.max(depFt, arrFt) + 500), S.tas);
   let t = S.etd.getTime();
   path.forEach((p, i) => {
@@ -834,9 +975,27 @@ function endSev(c) {
       || (c.p_cig1500 || 0) >= 30 || (c.p_lt2000 || 0) >= 30 || (c.p_icing || 0) >= 30) return 1;
   return 0;
 }
+// Краища извън петте летища: ICON в точката (приземните стойности)
+function modelEndBlock(pl, pt, ts, lab) {
+  const m = pt && pt.m && pt.m.icon;
+  const head = `<h3>${lab}: ${placeLabel(pl)} <span>${hhmmUtc(new Date(ts))} UTC · ${t("fromModel")}</span></h3>`;
+  if (!m) return {sev: 0, html: `<div class="end">${head}<span class="hint">${t("noModel")}</span></div>`};
+  const tag = (x, k) => `<span class="tag ${k}">${x}</span>`;
+  const [dir, spd] = fin(m.u) && fin(m.v) ? dirspd(m.u, m.v) : [NaN, NaN];
+  const td = fin(m.T) && fin(m.RH) ? (() => { const a = 17.67, b = 243.5, g = Math.log(Math.max(m.RH, 1) / 100) + a * m.T / (b + m.T); return b * g / (a - g); })() : NaN;
+  const vis = fin(m.vis) ? (m.vis >= 10000 ? "≥10 km" : `${Math.round(m.vis / 100) * 100} m`) : "—";
+  const visK = fin(m.vis) ? (m.vis < 1000 ? "c-crit" : m.vis < 2000 ? "c-warn" : m.vis < 5000 ? "c-info" : "") : "";
+  const ccK = fin(m.ccl) ? (m.ccl >= 70 ? "c-warn" : m.ccl >= 30 ? "c-info" : "") : "";
+  const sv = fin(m.vis) && m.vis < 1000 ? 2 : (fin(m.vis) && m.vis < 2000) || (fin(m.ccl) && m.ccl >= 70) ? 1 : 0;
+  return {sev: sv, html: `<div class="end">${head}<div class="row">`
+    + `<span>${t("endWind")} <b>${fin(spd) ? fmtW({dir, spd}) : "—"}</b></span><span>${t("endVis")} ${tag(vis, visK)}</span>`
+    + `<span>${t("lowCloud")} ${tag(fin(m.ccl) ? Math.round(m.ccl) + "%" : "—", ccK)}</span>`
+    + (fin(m.pr) && m.pr >= 0.1 ? `<span>${tag((m.sn > 0 ? "SN " : "RA ") + m.pr.toFixed(1) + " mm/h", "c-info")}</span>` : "")
+    + `<span>T/Td <b>${fin(m.T) ? Math.round(m.T) : "—"}/${fin(td) ? Math.round(td) : "—"}</b></span></div></div>`};
+}
 function endBlock(T, icao, ts, lab) {
   const c = tableCol(T, icao, ts);
-  const name = `${icao} ${AIRPORTS[icao][S.lang]}`;
+  const name = placeLabel(place(icao));
   if (!c) return {sev: 0, html: `<div class="end"><h3>${lab}: ${name} <span>${hhmmUtc(new Date(ts))} UTC</span></h3><span class="hint">${T ? t("endOut") : t("endNoTable")}</span></div>`};
   const sv = endSev(c);
   const tag = (x, k) => `<span class="tag ${k}">${x}</span>`;
@@ -856,7 +1015,9 @@ function endBlock(T, icao, ts, lab) {
     + (pr.length ? `<div class="hint">${pr.join(" · ")}</div>` : "") + `</div>`};
 }
 function drawEnds(F, T) {
-  const d = endBlock(T, S.from, S.etd.getTime(), t("dep")), a = endBlock(T, S.to, F.eta.getTime(), t("arr"));
+  const pd = place(S.from), pa = place(S.to);
+  const d = pd.main ? endBlock(T, S.from, S.etd.getTime(), t("dep")) : modelEndBlock(pd, F.path[0], S.etd.getTime(), t("dep"));
+  const a = pa.main ? endBlock(T, S.to, F.eta.getTime(), t("arr")) : modelEndBlock(pa, F.path[F.path.length - 1], F.eta.getTime(), t("arr"));
   let note = "";
   if (T && T.created) {
     const age = (Date.now() - Date.parse(T.created)) / 60000;
@@ -892,7 +1053,7 @@ function drawResults(F, endSevMax = 0) {
   const agl = cr.map(p => p.el.agl).filter(fin);
   const min = (F.eta - S.etd) / 60000;
   $("overall").innerHTML = `<h2>${t("ovTitle")}</h2><span class="ov-st ${st[0]}">${st[1]}</span><ul class="ov">`
-    + `<li>${S.from} ${hhmmUtc(S.etd)} → ${S.to} <b>${hhmmUtc(F.eta)} UTC</b> · ${Math.floor(min / 60)}:${pad(Math.round(min % 60))} · FL${String(S.fl).padStart(3, "0")}</li>`
+    + `<li>${place(S.from).short} ${hhmmUtc(S.etd)} → ${place(S.to).short} <b>${hhmmUtc(F.eta)} UTC</b> · ${Math.floor(min / 60)}:${pad(Math.round(min % 60))} · FL${String(S.fl).padStart(3, "0")}</li>`
     + ovW
     + `<li>${t("ovFzl")}: <b>${fz.length ? ftOf(Math.min(...fz)) + " ft" : "—"}</b></li>`
     + `<li>${t("ovAgl")}: <b>${agl.length ? ftOf(Math.min(...agl)) + " ft" : "—"}</b>`
@@ -1028,10 +1189,10 @@ function drawChart(F) {
   // летищата и междинните точки: вертикали и хапчета отгоре
   const rp = routePoints();
   let acc = 0;
-  const names = [[0, S.from]];
-  for (let j = 0; j < rp.length - 1; j++) { acc += gcDist(rp[j], rp[j + 1]); names.push([acc * NM_KM, j < rp.length - 2 ? String(j + 1) : S.to]); }
+  const names = [[0, place(S.from).short]];
+  for (let j = 0; j < rp.length - 1; j++) { acc += gcDist(rp[j], rp[j + 1]); names.push([acc * NM_KM, j < rp.length - 2 ? String(j + 1) : place(S.to).short]); }
   names.forEach(([k, n], j) => {
-    const x = X(k), w = n.length > 2 ? 40 : 20;
+    const x = X(k), w = n.length > 2 ? Math.max(40, n.length * 7.2 + 12) : 20;
     const bx = Math.max(mL, Math.min(Wd - mR - w, x - w / 2));
     g += `<line x1="${x}" x2="${x}" y1="${yTop}" y2="${ySecB}" stroke="#C9D2DE" stroke-width="1"/>`
       + `<g transform="translate(${bx.toFixed(1)},4)"><rect width="${w}" height="18" rx="4" fill="${n.length > 2 ? "#121821" : "#fff"}" stroke="#121821"/>`
@@ -1262,7 +1423,7 @@ async function calculate() {
   }
 }
 function routePoints() {
-  const A = AIRPORTS[S.from], B = AIRPORTS[S.to];
+  const A = place(S.from), B = place(S.to);
   return [[A.lat, A.lon], ...S.wp, [B.lat, B.lon]];
 }
 // Къде да се вмъкне нова точка: в участъка, най-близък до нея
@@ -1289,9 +1450,10 @@ function readUrl() {
   let lang = q.get("lang");
   if (!lang) { try { lang = localStorage.getItem("route_lang"); } catch (e) {} }
   if (lang === "en" || lang === "bg") S.lang = lang;
-  const f = (q.get("from") || "").toUpperCase(), to = (q.get("to") || "").toUpperCase();
-  if (AIRPORTS[f]) S.from = f;
-  if (AIRPORTS[to]) S.to = to;
+  const asId = v => { if (!v) return null; const u = v.toUpperCase(); if (AIRPORTS[u] || AF_BY[u]) return u;
+                      const c = parseCoord(v); return c && inRegion(c) ? coordId(c) : null; };
+  S.from = asId(q.get("from")) || S.from;
+  S.to = asId(q.get("to")) || S.to;
   const etd = fromParam(q.get("etd"));
   S.etd = etd || defaultEtd();
   const tas = parseInt(q.get("tas"), 10), fl = parseInt(q.get("fl"), 10);
@@ -1352,16 +1514,46 @@ const apLayer = L.layerGroup().addTo(map), wpLayer = L.layerGroup().addTo(map);
 const line = L.polyline([], {color: "#121821", weight: 3, opacity: .85}).addTo(map);
 const profLayer = L.layerGroup().addTo(map);
 
+// Изскачащо меню с действията за място (летище, площадка или точка)
+function placePopup(id, latlng, withWp) {
+  const box = document.createElement("div");
+  const pl = place(id);
+  box.innerHTML = `<div style="font-weight:600">${placeLabel(pl)}</div>`;
+  const acts = document.createElement("div"); acts.className = "pop-acts";
+  const btn = (txt, fn) => { const b = document.createElement("button"); b.type = "button"; b.className = "btn"; b.textContent = txt;
+                             b.onclick = () => { map.closePopup(); fn(); }; acts.appendChild(b); };
+  btn(t("setFrom"), () => setPlace("from", id));
+  if (withWp) btn(t("addWp"), () => { const p = [pl.lat, pl.lon]; S.wp.splice(insertIndex(p), 0, p); update(); });
+  btn(t("setTo"), () => setPlace("to", id));
+  box.appendChild(acts);
+  L.popup().setLatLng(latlng).setContent(box).openOn(map);
+}
 function drawAirports() {
   apLayer.clearLayers();
+  const z = map.getZoom();
+  for (const f of AIRFIELDS) {
+    if (!f[6] && z < 9 && f[0] !== S.from && f[0] !== S.to) continue;
+    const m = L.marker([f[3], f[4]], {icon: L.divIcon({className: "af-ic", iconSize: [9, 9]}), keyboard: false,
+                                       title: `${f[0]} ${S.lang === "bg" && f[1] ? f[1] : f[2]}`}).addTo(apLayer);
+    m.on("click", e => { L.DomEvent.stopPropagation(e); placePopup(f[0], e.latlng, true); });
+  }
   for (const [icao, a] of Object.entries(AIRPORTS)) {
     const active = icao === S.from || icao === S.to;
-    L.marker([a.lat, a.lon], {
+    const m = L.marker([a.lat, a.lon], {
       icon: L.divIcon({className: "", html: `<span class="ap-ic" style="${active ? "" : "background:#6B7280"}">${icao}</span>`, iconAnchor: [18, 10]}),
       keyboard: false, title: `${icao} ${a[S.lang]}`,
     }).addTo(apLayer);
+    m.on("click", e => { L.DomEvent.stopPropagation(e); placePopup(icao, e.latlng, false); });
+  }
+  for (const [key, lab] of [["from", t("depShort")], ["to", t("arrShort")]]) {
+    const pl = place(S[key]);
+    if (pl.main) continue;
+    L.marker([pl.lat, pl.lon], {keyboard: false, interactive: false,
+      icon: L.divIcon({className: "", iconAnchor: [-6, 10], html: `<span class="ap-ic">${lab} ${pl.coord ? "" : pl.short}</span>`})}).addTo(apLayer);
+    L.circleMarker([pl.lat, pl.lon], {radius: 5, color: "#121821", weight: 2, fillColor: "#fff", fillOpacity: 1, interactive: false}).addTo(apLayer);
   }
 }
+map.on("zoomend", drawAirports);
 function drawRoute() {
   line.setLatLngs(routePoints());
   wpLayer.clearLayers();
@@ -1381,23 +1573,72 @@ function drawRoute() {
     m.bindPopup(pop);
   });
 }
+// Клик на картата: избор — излитане оттук, междинна точка, кацане тук
 map.on("click", e => {
   const p = [r4(e.latlng.lat), r4(e.latlng.lng)];
   if (!inRegion(p)) return;
-  S.wp.splice(insertIndex(p), 0, p);
-  update();
+  placePopup(coordId(p), e.latlng, true);
 });
 function fitRoute() { map.fitBounds(L.latLngBounds(routePoints()).pad(.25), {maxZoom: 9}); }
 
 // ---------------------------------------------------------------
 // Форма
 // ---------------------------------------------------------------
-function fillSelects() {
-  for (const id of ["from", "to"]) {
-    const sel = $(id);
-    sel.innerHTML = Object.entries(AIRPORTS).map(([icao, a]) => `<option value="${icao}">${icao} · ${a[S.lang]}</option>`).join("");
-    sel.value = S[id];
-  }
+// Избор на място: търсачка с най-известните веднага и всички при писане
+function fillSelects() { for (const k of ["from", "to"]) $(k).value = placeLabel(place(S[k])); }
+function setPlace(key, id) {
+  S[key] = id;
+  $(key).value = placeLabel(place(id));
+  const pl = place(id);
+  if (pl && pl.elev == null) fetchElevation([[pl.lat, pl.lon]]).then(e => { if (fin(e[0])) { ELEV[id] = e[0]; update(); } }).catch(() => {});
+  update(); fitRoute();
+}
+function options(q) {
+  const main = Object.entries(AIRPORTS).map(([c, a]) => ({id: c, code: c, name: a[S.lang], en: a.en, elev: a.elev, main: true}));
+  const af = AIRFIELDS.map(f => ({id: f[0], code: f[0], name: S.lang === "bg" && f[1] ? f[1] : f[2], en: f[2], bg: f[1], elev: f[5], featured: f[6]}));
+  const n = norm(q);
+  if (!n) return {groups: [[t("grpMain"), main], [t("grpAf"), af.filter(x => x.featured)]]};
+  const hit = x => norm(x.code).includes(n) || norm(x.name).includes(n) || norm(x.en).includes(n) || norm(x.bg).includes(n);
+  const all = [...main, ...af].filter(hit).sort((a, b) => (norm(a.code).startsWith(n) || norm(a.name).startsWith(n) ? 0 : 1)
+                                                        - (norm(b.code).startsWith(n) || norm(b.name).startsWith(n) ? 0 : 1)).slice(0, 40);
+  return {groups: [["", all]]};
+}
+function setupCombo(key) {
+  const inp = $(key), list = $(`${key}-list`);
+  let items = [], act = -1;
+  const close = () => { list.hidden = true; inp.setAttribute("aria-expanded", "false"); };
+  const render = () => {
+    const q = inp.value === placeLabel(place(S[key])) ? "" : inp.value;
+    const {groups} = options(q);
+    list.innerHTML = ""; items = []; act = -1;
+    const c = parseCoord(inp.value);
+    if (c && inRegion(c)) groups.unshift(["", [{id: coordId(c), code: "", name: `${t("coordOpt")} ${fmtCoord(c)}`}]]);
+    for (const [title, arr] of groups) {
+      if (title && arr.length) { const h = document.createElement("div"); h.className = "cb-sep"; h.textContent = title; list.appendChild(h); }
+      for (const x of arr) {
+        const o = document.createElement("div");
+        o.className = "cb-opt"; o.setAttribute("role", "option"); o.id = `${key}-o${items.length}`;
+        o.innerHTML = `<span class="c"></span><span class="n"></span><span class="e"></span>`;
+        o.children[0].textContent = x.code; o.children[1].textContent = x.name;
+        o.children[2].textContent = fin(x.elev) ? `${Math.round(x.elev / 0.3048 / 10) * 10} ft` : "";
+        o.addEventListener("mousedown", ev => { ev.preventDefault(); choose(x.id); });
+        list.appendChild(o); items.push(x);
+      }
+    }
+    if (!items.length) { const h = document.createElement("div"); h.className = "cb-sep"; h.textContent = t("noMatch"); list.appendChild(h); }
+    list.hidden = false; inp.setAttribute("aria-expanded", "true");
+  };
+  const mark = () => items.forEach((_, i) => { const o = $(`${key}-o${i}`); o.setAttribute("aria-selected", i === act); if (i === act) o.scrollIntoView({block: "nearest"}); });
+  const choose = id => { close(); setPlace(key, id); inp.blur(); };
+  inp.addEventListener("focus", () => { inp.select(); render(); });
+  inp.addEventListener("input", render);
+  inp.addEventListener("keydown", e => {
+    if (e.key === "ArrowDown") { e.preventDefault(); act = Math.min(items.length - 1, act + 1); mark(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); act = Math.max(0, act - 1); mark(); }
+    else if (e.key === "Enter") { e.preventDefault(); const x = items[act >= 0 ? act : 0]; if (x) choose(x.id); }
+    else if (e.key === "Escape") { close(); inp.value = placeLabel(place(S[key])); inp.blur(); }
+  });
+  inp.addEventListener("blur", () => setTimeout(() => { close(); inp.value = placeLabel(place(S[key])); }, 120));
 }
 function drawWpList() {
   const box = $("wp-list");
@@ -1484,8 +1725,7 @@ $("etd").value = toInput(S.etd);
 $("tas").value = S.tas;
 $("fl").value = String(S.fl).padStart(3, "0");
 
-$("from").addEventListener("change", e => { S.from = e.target.value; update(); fitRoute(); });
-$("to").addEventListener("change", e => { S.to = e.target.value; update(); fitRoute(); });
+setupCombo("from"); setupCombo("to");
 $("etd").addEventListener("change", e => { S.etd = fromInput(e.target.value); update(); });
 $("tas").addEventListener("input", e => { S.tas = parseInt(e.target.value, 10); update(); });
 $("fl").addEventListener("input", e => { S.fl = parseInt(e.target.value, 10); update(); });
