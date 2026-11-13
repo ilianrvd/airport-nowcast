@@ -35,8 +35,34 @@ def _run_time(cfg, now):
     return t, "приблизително"
 
 
+def _latest_cached(out_dir, now, max_age_h=12):
+    """Най-новият кеширан ALADIN файл, ако run-ът му не е по-стар от max_age_h (при неуспешно теглене)."""
+    best = None
+    for fn in sorted(os.listdir(out_dir)) if os.path.isdir(out_dir) else []:
+        if fn.startswith("aladin_") and fn.endswith(".json"):
+            try:
+                r = dt.datetime.strptime(fn[7:17], "%Y%m%d%H").replace(tzinfo=dt.timezone.utc)
+            except ValueError:
+                continue
+            if (now - r).total_seconds() <= max_age_h * 3600:
+                best = (os.path.join(out_dir, fn), r.isoformat())
+    return best
+
+
 def fetch_aladin(now, airports, cfg, om, cache_dir):
-    """Връща (път, run_iso, нов_ли). Не тегли повторно, ако run-ът вече е в кеша."""
+    """Връща (път, run_iso, нов_ли). Не тегли повторно, ако run-ът вече е в кеша.
+    При грешка (напр. изтекло време) връща последния кеширан файл, ако не е по-стар от 12 ч."""
+    try:
+        return _fetch_aladin(now, airports, cfg, om, cache_dir)
+    except Exception as e:
+        old = _latest_cached(os.path.join(cache_dir, "aladin"), now)
+        if old is None:
+            raise
+        logger.warning(f"ALADIN: {e} — ползвам кеширания run {old[1][:13]}Z")
+        return old[0], old[1], False
+
+
+def _fetch_aladin(now, airports, cfg, om, cache_dir):
     run, run_src = _run_time(cfg, now)
     out_dir = os.path.join(cache_dir, "aladin")
     os.makedirs(out_dir, exist_ok=True)

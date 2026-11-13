@@ -66,7 +66,7 @@ def compute(cols, metars, models, nowcast_ap, settings):
     ic = models.get("icon")
     m0 = metars[0] if metars else None
     t0 = dt.datetime.fromisoformat(cols[0]["time"]).timestamp()
-    W = settings.WEIGHTS["wind"]
+    W = settings.WEIGHTS["wx"]
 
     # --- корекция на тавана
     cm = m0.get("ceiling_ft") if m0 else None

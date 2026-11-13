@@ -59,7 +59,7 @@ def _compose(intensity, shower, ts, vcts):
 
 def compute(metars, nowcast_ap, nc_meta, models, cols, now, settings):
     c = settings.PHENOMENON
-    W = settings.WEIGHTS["wind"]
+    W = settings.WEIGHTS["wx"]
     m0 = metars[0] if metars else None
     m_ok = m0 is not None and m0.get("time") is not None and \
         (now - m0["time"]).total_seconds() <= settings.METAR["stale_min"] * 60

@@ -212,6 +212,7 @@ def panel(icao, a, meta, now, active):
     models = [f"ICON-EU {age_txt(meta.get('icon_run'), now)}"]
     models.append("IFS ✓" if meta.get("ifs") else "IFS —")
     models.append("GFS ✓" if meta.get("gfs") else "GFS —")
+    models.append("ALADIN ✓" if meta.get("aladin") else "ALADIN —")
     stale = ' <span class="bad">СТАР</span>' if a.get("stale_metar") else ""
     return f"""
 <section class="panel" id="p-{icao}" {'hidden' if not active else ''}>
@@ -323,7 +324,7 @@ def main():
 <span>Източник: M METAR · К корекция · Ф мъгла · Н nowcast · N модели</span>
 </section>
 <footer>Експериментален продукт за обучение и проучване. Не е TAF и не замества официалните прогнози.
-Източници: METAR (aviationweather.gov), ICON-EU (DWD), ECMWF IFS и GFS (Open-Meteo), nowcasting-public, модел за мъгла.</footer>
+Източници: METAR (aviationweather.gov), ICON-EU (DWD), ECMWF IFS, GFS и ALADIN (Open-Meteo), nowcasting-public, модел за мъгла.</footer>
 </main><script>window.GEN={int(now.timestamp() * 1000)};</script><script>{JS}</script><script>{RELOAD_JS}</script></body></html>"""
     out = os.path.join(S.OUTPUT_DIR, "index.html")
     with open(out, "w", encoding="utf-8") as f:

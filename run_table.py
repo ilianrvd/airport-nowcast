@@ -41,13 +41,28 @@ def load_inputs():
     return inp, icon
 
 
+def load_aladin(inp):
+    """ALADIN от кеша (само ако е в входните данни и файлът го има), иначе None."""
+    ref = (inp or {}).get("aladin")
+    if not ref:
+        return None
+    p = os.path.join(S.CACHE_DIR, ref["file"])
+    try:
+        with open(p, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
 def build(inp, icon, now, icaos):
+    ala = load_aladin(inp)
     nc0, fg0 = inp.get("nowcast") or {}, inp.get("fog") or {}
     res = {"created": now.isoformat(), "inputs_created": inp.get("created"),
            "icon_run": icon["run"] if icon else None,
            "meta": {
                "icon_run": icon["run"] if icon else None,
                "ifs": bool(inp.get("ifs")), "gfs": bool(inp.get("gfs")),
+               "aladin": bool(ala), "aladin_run": ala.get("run") if ala else None,
                "nowcast_radar": nc0.get("radar_time"), "nowcast_age_min": nc0.get("age_min"),
                "nowcast_stale": nc0.get("stale", True) if nc0 else True,
                "nowcast_method": nc0.get("method"),
@@ -62,6 +77,8 @@ def build(inp, icon, now, icaos):
         for k in ("ifs", "gfs"):
             if inp.get(k):
                 models[k] = from_openmeteo(inp[k], icao)
+        if ala and icao in ala.get("airports", {}):
+            models["aladin"] = from_openmeteo(ala, icao)
         metars = _metars(inp.get("metar", {}).get(icao))
         a = compute(icao, metars, models, now, S)
         nc = inp.get("nowcast")
