@@ -102,7 +102,8 @@ ALADIN = {
     # Околност само за архива: (2R+1)² точки около летището през ~2.3 km (решетката на ALADIN),
     # cell_selection=nearest. Служи да се види дали съседни клетки хващат мъгла, която точката пропуска.
     "nb": {"radius": 1, "step_lat": 0.021, "step_lon": 0.028,
-           "hourly": ["visibility", "wind_speed_10m", "cloud_cover_low", "relative_humidity_2m"]},
+           "hourly": ["visibility", "wind_speed_10m", "cloud_cover_low"],
+           "forecast_hours": 24, "timeout": 25},     # 13.11: със 72 ч и 90 s изтичаше всеки път (+90 s към пускането)
     "hourly": [
         "temperature_2m", "dew_point_2m", "relative_humidity_2m",
         "wind_speed_10m", "wind_direction_10m", "wind_gusts_10m",

@@ -130,11 +130,11 @@ def _fetch_nb(airports, cfg, om):
     R, dla, dlo, vars_ = nb["radius"], nb["step_lat"], nb["step_lon"], nb["hourly"]
     flat = [(icao, round(a["lat"] + i * dla, 4), round(a["lon"] + j * dlo, 4))
             for icao, a in airports.items() for i in range(-R, R + 1) for j in range(-R, R + 1)]
-    r = requests.get(om["url"], timeout=90, headers={"User-Agent": "airport-nowcast/0.1"}, params={
+    r = requests.get(om["url"], timeout=nb.get("timeout", 25), headers={"User-Agent": "airport-nowcast/0.1"}, params={
         "latitude": ",".join(f"{p[1]:.4f}" for p in flat),
         "longitude": ",".join(f"{p[2]:.4f}" for p in flat),
         "models": cfg["model"], "hourly": ",".join(vars_),
-        "forecast_hours": cfg["forecast_hours"], "past_hours": 0,
+        "forecast_hours": nb.get("forecast_hours", 24), "past_hours": 0,
         "wind_speed_unit": "kn", "timezone": "GMT", "timeformat": "unixtime",
         "cell_selection": "nearest"})
     r.raise_for_status()

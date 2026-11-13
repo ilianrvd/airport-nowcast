@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 15
     environment:
       name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+      url: ${{ steps.deploy2.outputs.page_url || steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
 
@@ -66,16 +66,23 @@ jobs:
           path: output
       - id: deploy
         uses: actions/deploy-pages@v4
+        continue-on-error: true      # понякога GitHub не вижда артефакта веднага („Found 0 artifacts“)
+      - name: Повторно публикуване (един опит)
+        if: steps.deploy.outcome == 'failure'
+        run: sleep 20
+      - id: deploy2
+        if: steps.deploy.outcome == 'failure'
+        uses: actions/deploy-pages@v4
 
       # Диагностика (не проваля пускането): дали публикуваната страница е тази от
       # това пускане. Сравнява основния адрес (кеширан) с адреса с ?t= (заобикаля кеша).
       # Основен адрес по-стар от ?t= → кеш; и двата стари → публикуването не е влязло.
       - name: Проверка на публикуването
-        if: steps.deploy.outcome == 'success'
+        if: steps.deploy.outcome == 'success' || steps.deploy2.outcome == 'success'
         continue-on-error: true
         run: |
           sleep 40
-          URL="${{ steps.deploy.outputs.page_url }}"
+          URL="${{ steps.deploy2.outputs.page_url || steps.deploy.outputs.page_url }}"
           gen() { grep -o 'window.GEN=[0-9]*' | head -1 | cut -d= -f2; }
           want=$(gen < output/index.html)
           plain=$(curl -sS --max-time 20 "$URL" | gen || true)
