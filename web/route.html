@@ -336,7 +336,9 @@ const T = {
     ovModels: "Модел: ICON-EU (DWD) през Open-Meteo.", yes: "да", no: "не", lgCloud: "облак",
     aglExpl: "Запас над релефа: на колко ft е полетът над най-високата точка на релефа в ивица ±10 km от двете страни на пътя (само на крейсерското ниво). Под 1000 ft — жълто, под 500 ft — червено.", nmFrom: "km",
     rWind: "вятър", rComp: "попътен kt", rCloud: "в облак", rIce: "обледяване", rVisL: "вид. на нивото",
-    rVisS: "вид. на земята", rAgl: "запас над релефа ft", rT: "T °C", lgRelief: "релеф (отделна скала)", relief: "релеф", tipWhere: "време, място", tipAlt: "височина",
+    rVisS: "вид. на земята", rAgl: "запас над релефа ft", rT: "T °C", rTurb: "турб. / срез", turbShort: "турб", wsShort: "срез",
+    lgTurb: "турбуленция", lgWs: "срез на вятъра", lgBarbs: "вятър на 3 нива под полета (през 1500 ft)",
+    ovTurb: "Турбуленция / срез на нивото", lgRelief: "релеф (отделна скала)", relief: "релеф", tipWhere: "време, място", tipAlt: "височина",
     lgFlight: "полет: без особености / внимание / неблагоприятно",
     segPart: "участък", segClimb: "изкачване", segCruise: "ниво", segDesc: "снижение",
     lgTer: "релеф по пътя", lgTerC: "най-високо ±10 km", lgCloud2: "облак, 2 модела", lgCloud1: "облак, 1 модел",
@@ -384,7 +386,9 @@ const T = {
     ovModels: "Model: ICON-EU (DWD) via Open-Meteo.", yes: "yes", no: "no", lgCloud: "cloud",
     aglExpl: "Terrain clearance: how many ft the flight is above the highest terrain within a strip ±10 km either side of the track (cruise level only). Below 1000 ft — yellow, below 500 ft — red.", nmFrom: "km",
     rWind: "wind", rComp: "tailwind kt", rCloud: "in cloud", rIce: "icing", rVisL: "vis at level",
-    rVisS: "surface vis", rAgl: "terrain clearance ft", rT: "T °C", lgRelief: "terrain (own scale)", relief: "terrain", tipWhere: "time, position", tipAlt: "altitude",
+    rVisS: "surface vis", rAgl: "terrain clearance ft", rT: "T °C", rTurb: "turb. / shear", turbShort: "turb", wsShort: "WS",
+    lgTurb: "turbulence", lgWs: "wind shear", lgBarbs: "wind at 3 levels below flight (1500 ft apart)",
+    ovTurb: "Turbulence / shear at level", lgRelief: "terrain (own scale)", relief: "terrain", tipWhere: "time, position", tipAlt: "altitude",
     lgFlight: "flight: no significant / caution / adverse",
     segPart: "segment", segClimb: "climb", segCruise: "level", segDesc: "descent",
     lgTer: "terrain on track", lgTerC: "highest ±10 km", lgCloud2: "cloud, 2 models", lgCloud1: "cloud, 1 model",
@@ -603,7 +607,7 @@ const LEVELS = [1000, 975, 950, 925, 900, 850, 800, 700, 600, 500, 400];
 // нивата за разреза — по ISA.
 const PL_VARS = ["temperature", "relative_humidity", "wind_speed", "wind_direction"];
 const SFC_VARS = ["temperature_2m", "relative_humidity_2m", "wind_speed_10m", "wind_direction_10m",
-  "surface_pressure", "visibility", "cloud_cover_low", "precipitation", "snowfall", "freezing_level_height"];
+  "surface_pressure", "visibility", "cloud_cover_low", "precipitation", "snowfall", "freezing_level_height", "wind_gusts_10m"];
 const TERRAIN_STEP_KM = 5;
 
 const isaP = ft => 1013.25 * Math.pow(1 - 6.8756e-6 * ft, 5.2559);   // hPa
@@ -802,7 +806,7 @@ async function computeFlight() {
       const col = column(d, ts);
       (p.cols = p.cols || {})[k] = col;
       const a = atAlt(col, p.alt);
-      p.m[k] = a && {...a, vis: tAt(d, "visibility", ts), ccl: tAt(d, "cloud_cover_low", ts),
+      p.m[k] = a && {...a, vis: tAt(d, "visibility", ts), ccl: tAt(d, "cloud_cover_low", ts), gust: tAt(d, "wind_gusts_10m", ts),
                      pr: tAt(d, "precipitation", ts), sn: tAt(d, "snowfall", ts), fzl: tAt(d, "freezing_level_height", ts),
                      elev: d.elev};
     }
@@ -817,6 +821,13 @@ async function computeFlight() {
     const n = sideOf(i);
     for (const k of keys) if (sideVis[k]) vs[k] = [sideVis[k][2 * n], sideVis[k][2 * n + 1]].map(d => tAt(d, "visibility", ts));
     p.el = elements(p, vs);
+    // турбуленция и срез по слоевете на колоната; на нивото на полета — в елементите
+    const col = (p.cols || {}).icon, m = (p.m || {}).icon;
+    p.lay = col ? shearLayers(col, m && m.gust) : [];
+    const here = p.lay.filter(L => p.alt >= L.lo && p.alt <= L.hi);
+    p.el.turb = Math.max(0, ...here.map(L => L.turb));
+    p.el.ws = Math.max(0, ...here.map(L => L.ws));
+    p.el.shear = Math.max(0, ...here.map(L => L.S));
   });
   F.terrain = terrain; F.errors = errors; F.data = data;
   return F;
@@ -909,12 +920,46 @@ const r100 = x => Math.round(x / 100) * 100;
 const ftOf = h => r100(h).toLocaleString("en-US").replace(/,/g, " ");
 
 // Степен: 2 = червено, 1 = жълто, 0 = нищо
+// ---------------------------------------------------------------
+// Турбуленция и вертикален срез на вятъра (по нивата на ICON)
+// ---------------------------------------------------------------
+// За всеки слой между съседни нива над земята:
+//   срез S = |ΔV| / Δz в kt на 1000 ft — умерен ≥ 6, силен ≥ 9;
+//   турбуленция по числото на Ричардсън Ri = N² / (ΔV/Δz)² при S ≥ 4:
+//   Ri < 1 — възможна, Ri < 0.25 — вероятна;
+//   механична турбуленция до 3000 ft над земята при пориви ≥ 25 kt (≥ 35 — силна).
+// Прагове и формули — ориентировъчни, за калибриране по случаи (PIREP).
+const WS_MOD = 6, WS_SEV = 9, WS_MIN = 4, RI_POS = 1, RI_LIK = 0.25, GUST_MECH = [25, 35];
+function shearLayers(col, gust) {
+  const out = [];
+  const lv = col.filter(c => fin(c.u) && fin(c.v) && fin(c.T) && fin(c.z));
+  for (let i = 0; i < lv.length - 1; i++) {
+    const a = lv[i], b = lv[i + 1];
+    const dz = b.z - a.z;                       // m
+    if (dz < 50) continue;
+    const dV = Math.hypot(b.u - a.u, b.v - a.v); // kt
+    const S = dV / (dz / 0.3048 / 1000);        // kt / 1000 ft
+    const th = c => (c.T + 273.15) * Math.pow(1000 / c.p, 0.2857);
+    const N2 = 9.81 / ((th(a) + th(b)) / 2) * (th(b) - th(a)) / dz;
+    const sh = (dV * 0.5144 / dz) ** 2;
+    const Ri = sh > 1e-8 ? N2 / sh : Infinity;
+    const ws = S >= WS_SEV ? 2 : S >= WS_MOD ? 1 : 0;
+    const turb = S >= WS_MIN ? (Ri < RI_LIK ? 2 : Ri < RI_POS ? 1 : 0) : 0;
+    if (ws || turb) out.push({lo: a.z / 0.3048, hi: b.z / 0.3048, ws, turb, S, Ri});
+  }
+  if (fin(gust) && gust >= GUST_MECH[0] && col.length) {
+    const z0 = col[0].z / 0.3048;
+    out.push({lo: z0, hi: z0 + 3000, ws: 0, turb: gust >= GUST_MECH[1] ? 2 : 1, S: 0, Ri: NaN, mech: true});
+  }
+  return out;
+}
+
 function sev(e, p) {
   if (!e || !e.of) return 0;
   const full = n => n && n === e.of;
   // Само времето; терена се показва отделно (не е метеорологично условие)
   if (full(e.cloud) || full(e.ice) || full(e.sfc1500)) return 2;
-  if (e.cloud || e.ice || e.sfc1500 || e.sfc5000) return 1;
+  if (e.cloud || e.ice || e.sfc1500 || e.sfc5000 || e.turb || e.ws) return 1;
   return 0;
 }
 // Диапазони по разстояние, където условието е изпълнено: [[s0, s1, max n]]
@@ -1062,6 +1107,7 @@ function drawResults(F, endSevMax = 0) {
     + `</li>`
     + `<li>${t("ovCloud")}:<br>${listR(ranges(P, p => p.el && p.el.cloud))}</li>`
     + `<li>${t("ovIce")}:<br>${listR(ranges(P, p => p.el && p.el.ice))}</li>`
+    + `<li>${t("ovTurb")}:<br>${listR(ranges(P, p => p.el && (p.el.turb || p.el.ws) ? 1 : 0))}</li>`
     + `<li>${t("ovVis")} &lt; 1500 m:<br>${listR(ranges(P, p => p.el && p.el.sfc1500))}</li>`
     + `<li>${t("ovVis")} &lt; 5000 m:<br>${listR(ranges(P, p => p.el && p.el.sfc5000))}</li>`
     + `</ul><p class="hint" style="margin:8px 0 0">${t("ovModels")}</p>`;
@@ -1072,7 +1118,8 @@ function drawResults(F, endSevMax = 0) {
 // ---------------------------------------------------------------
 // Разрез + лента с елементите — една графика с обща ос по разстоянието
 // ---------------------------------------------------------------
-const C_CLOUD = "#2E9E5B", C_ICE = "#2563EB", C_FZL = "#B45309";
+const C_CLOUD = "#2E9E5B", C_ICE = "#2563EB", C_FZL = "#B45309", C_TURB = "#E5B300";
+const BARB_LEVELS = [0, 1500, 3000, 4500];   // ft под нивото на полета
 const SEV_COL = ["#14181F", "#D97706", "#C0392B"];
 const CELL = ["#F4F6F8", "#FBE3B6", "#F4C7C1", "#DCE8F7"];   // нищо, жълто, червено, синьо (инфо)
 const CELL_INK = ["#9AA3AF", "#5C3A00", "#6E160C", "#163A6B"];
@@ -1112,7 +1159,7 @@ function drawChart(F) {
   const of = Math.max(...P.map(p => (p.el || {}).of || 0));
   const Wd = 1100, mL = 128, mR = 18;
   const H_SEC = 300, H_TER = Math.round(H_SEC * 0.15 / 0.85), H_AX = 40, ROW = 26, GAP = 2;
-  const ROWS = ["rWind", "rComp", "rCloud", "rIce", "rVisL", "rVisS", "rAgl", "rT"];
+  const ROWS = ["rWind", "rComp", "rCloud", "rIce", "rTurb", "rVisL", "rVisS", "rAgl", "rT"];
   const yTop = 26, ySecB = yTop + H_SEC, yTerB = ySecB + H_TER, yAx = yTerB, yStrip = yAx + H_AX;
   const Ht = yStrip + ROWS.length * ROW + 6;
   const pw = Wd - mL - mR;
@@ -1125,6 +1172,7 @@ function drawChart(F) {
     <linearGradient id="g-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#EEF3FA"/><stop offset="1" stop-color="#FBFCFD"/></linearGradient>
     <linearGradient id="g-ter" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#CDBB9C"/><stop offset="1" stop-color="#EDE5D7"/></linearGradient>
     <filter id="f-cloud" x="-5%" y="-20%" width="110%" height="140%"><feGaussianBlur stdDeviation="5"/></filter>
+    <pattern id="p-ws" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="7" stroke="${C_TURB}" stroke-width="2.4"/></pattern>
     <clipPath id="c-sec"><rect x="${mL}" y="${yTop}" width="${pw}" height="${H_SEC}"/></clipPath>
   </defs>`;
   let g = `<rect x="${mL}" y="${yTop}" width="${pw}" height="${H_SEC}" fill="url(#g-sky)" rx="6"/>`;
@@ -1165,6 +1213,35 @@ function drawChart(F) {
       + `<g transform="translate(${(lp[0] - 40).toFixed(1)},${(lp[1] - 9).toFixed(1)})"><rect width="36" height="18" rx="9" fill="#fff" stroke="${C_FZL}"/><text x="18" y="12.5" text-anchor="middle" fill="${C_FZL}" font-weight="600">0 °C</text></g>`;
   }
 
+  // турбуленция (жълто, плътно) и срез (жълто, щриховано) по слоевете
+  let tb = "", wsr = "";
+  P.forEach((p, i) => {
+    for (const L of p.lay || []) {
+      if (L.lo >= yMax) continue;
+      const r = `x="${xa(i).toFixed(1)}" y="${Y(L.hi).toFixed(1)}" width="${(xb(i) - xa(i)).toFixed(1)}" height="${Math.max(1, Y(L.lo) - Y(L.hi)).toFixed(1)}"`;
+      if (L.turb) tb += `<rect ${r} fill="${C_TURB}" fill-opacity="${L.turb === 2 ? .42 : .24}"/>`;
+      if (L.ws) wsr += `<rect ${r} fill="url(#p-ws)" opacity="${L.ws === 2 ? 1 : .7}"/>`;
+    }
+  });
+  g += `<g clip-path="url(#c-sec)">${tb}${wsr}</g>`;
+
+  // вятър: на нивото на полета (черно) и на три нива под него през 1500 ft (сиво)
+  const everyB = Math.max(1, Math.ceil(P.length / 9));
+  let bb = "";
+  P.forEach((p, i) => {
+    if (i % everyB || p.phase !== "cruise" || !p.cols || !p.cols.icon) return;
+    const x = X(km(p));
+    BARB_LEVELS.forEach((d, j) => {
+      const ft = p.alt - d;
+      const ter = fin(p.terC) ? p.terC : 0;
+      if (j && ft < ter + 300) return;
+      const w = atAlt(p.cols.icon, ft);
+      if (!w || w.below || !fin(w.u) || !fin(w.v)) return;
+      const [dir, spd] = dirspd(w.u, w.v);
+      bb += `<g color="${j ? "#6B7280" : "#14181F"}" stroke="${j ? "#6B7280" : "#14181F"}" stroke-width="${j ? 1.1 : 1.4}" fill="none">${barb(x, Y(ft) - (j ? 0 : 14), dir, spd, j ? 16 : 20)}</g>`;
+    });
+  });
+
   // обледяване: синя прозрачна ивица по полета
   P.forEach((p, i) => {
     if (!i || !p.el || !p.el.ice) return;
@@ -1179,6 +1256,7 @@ function drawChart(F) {
     const q = P[i - 1], sv = Math.max(sev(p.el, p), sev(q.el, q));
     g += `<line x1="${X(km(q)).toFixed(1)}" y1="${Y(q.alt).toFixed(1)}" x2="${X(km(p)).toFixed(1)}" y2="${Y(p.alt).toFixed(1)}" stroke="${SEV_COL[sv]}" stroke-width="3" stroke-linecap="round"/>`;
   });
+  g += bb;
   // TOC / TOD
   for (const [lab, s] of [["TOC", F.vp.sToc], ["TOD", F.vp.sTod]]) {
     const x = X(s * NM_KM), y = Y(F.vp.top);
@@ -1268,6 +1346,10 @@ function drawChart(F) {
         } else if (key === "rAgl") {
           const cr = c.filter(([p]) => p.phase === "cruise" && p.el && fin(p.el.agl));
           if (cr.length) { const a = Math.min(...cr.map(([p]) => p.el.agl)); txt = String(Math.round(a / 100) * 100); bg = a < 500 ? 2 : a < 1000 ? 1 : 0; }
+        } else if (key === "rTurb") {
+          const tb = Math.max(...E.map(e => e.turb || 0)), w = Math.max(...E.map(e => e.ws || 0));
+          txt = [tb ? t("turbShort") : "", w ? t("wsShort") : ""].filter(Boolean).join("·") || "—";
+          bg = tb || w ? 1 : 0;
         } else if (key === "rT") {
           const T = E.map(e => e.T).filter(fin);
           if (T.length) { const m = Math.round(T.reduce((a, b) => a + b, 0) / T.length); txt = m === 0 ? "0" : (m > 0 ? "+" : "−") + Math.abs(m); bg = m <= 0 && m >= -20 ? 3 : 0; }
@@ -1292,6 +1374,9 @@ function drawChart(F) {
     + `<span><i style="background:${C_CLOUD};opacity:.22;border-radius:6px"></i>${t("lgCloud1")}</span>`
     : `<span><i style="background:${C_CLOUD};opacity:.3;border-radius:6px"></i>${t("lgCloud")}</span>`)
     + `<span><i style="background:${C_ICE};opacity:.45;height:8px"></i>${t("lgIce")}</span>`
+    + `<span><i style="background:${C_TURB};opacity:.4"></i>${t("lgTurb")}</span>`
+    + `<span><i style="background:repeating-linear-gradient(45deg,${C_TURB} 0 2px,transparent 2px 5px)"></i>${t("lgWs")}</span>`
+    + `<span><svg width="18" height="12" viewBox="0 0 18 12"><g stroke="#6B7280" stroke-width="1.2"><line x1="2" y1="6" x2="16" y2="6"/><line x1="16" y1="6" x2="13" y2="1"/></g></svg>${t("lgBarbs")}</span>`
     + `<span><i class="ln" style="border-top-color:${C_FZL};border-top-style:dashed"></i>${t("lgFzl")}</span>`
     + `<span><i class="ln" style="border-top-color:${SEV_COL[0]};border-top-width:3px"></i><i class="ln" style="border-top-color:${SEV_COL[1]};border-top-width:3px"></i><i class="ln" style="border-top-color:${SEV_COL[2]};border-top-width:3px"></i>${t("lgFlight")}</span>`
     + `<span><i style="background:linear-gradient(#CDBB9C,#EDE5D7)"></i>${t("lgRelief")}</span>`
@@ -1320,6 +1405,7 @@ function drawChart(F) {
     const vs = vmin(e.visSfc);
     if (fin(vs)) add(t("rVisS"), `${Math.round(vs)} m`);
     if (fin(e.fzl)) add("0 °C", `${ftOf(e.fzl)} ft`);
+    if (e.turb || e.ws) add(t("rTurb"), [e.turb ? t("turbShort") : "", e.ws ? `${t("wsShort")} ${Math.round(e.shear)} kt/1000 ft` : ""].filter(Boolean).join(" · "));
     if (p.phase === "cruise" && fin(e.agl)) add(t("rAgl"), `${ftOf(e.agl)}`);
     tip.innerHTML = rows.join("");
     tip.hidden = false;
