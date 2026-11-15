@@ -232,6 +232,7 @@ CSS = """
 header{background:#121821;color:#fff}
 .bar{padding:12px 20px;display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;justify-content:space-between}
 .brand{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.brand b{font-size:19px}
+.off{font-size:12px;color:#C9D1DC}.off a{color:#fff;font-weight:600;text-decoration:underline;text-underline-offset:2px}
 .warn{background:#F5C451;color:#3D2A00;font-size:12px;font-weight:700;padding:4px 9px;border-radius:4px;letter-spacing:.4px}
 .upd{font-size:13px;color:#C9D1DC}.upd b{color:#fff;font-family:'IBM Plex Mono',monospace}
 .views{background:#fff;border-bottom:1px solid #DDE1E7;padding:0 20px;display:flex;gap:4px}
@@ -312,7 +313,8 @@ def main():
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 <style>{CSS}</style></head><body>
 <header><div class="bar"><div class="brand"><b>Летищен nowcasting</b>
-<span class="warn">ЕКСПЕРИМЕНТАЛЕН · НЕ ЗА ОПЕРАТИВНА УПОТРЕБА</span></div>
+<span class="warn">ЕКСПЕРИМЕНТАЛЕН · НЕ ЗА ОПЕРАТИВНА УПОТРЕБА</span>
+<span class="off">Официална информация: <a href="https://b-flip.bulatsa.com" target="_blank" rel="noopener">B-FLIP</a> · <a href="https://viewer.egafor.eu/egafor-viewer/" target="_blank" rel="noopener">eGAFOR</a></span></div>
 <div class="upd">Обновено <b>{now:%H:%M} UTC</b> · следващо около <b>{nxt:%H:%M} UTC</b></div></div></header>
 <nav class="views" aria-label="Изгледи"><a href="index.html" aria-current="page">Летища</a><a href="route.html">Прогноза по маршрут</a></nav>
 <nav aria-label="Летища">{''.join(nav)}<span class="hint">цвят = най-лошото в следващите 6 ч</span></nav>
