@@ -39,7 +39,7 @@ def _ln(x):
     return math.log(max(float(x), 50.0))
 
 
-def _base_vis(models, ts, vmax):
+def _base_vis(models, ts, vmax, w=None):
     vals = {}
     for n in ("icon", "ifs"):
         if n in models:
@@ -48,7 +48,17 @@ def _base_vis(models, ts, vmax):
                 vals[n] = _ln(min(v, vmax))
     if not vals:
         return float("nan")
-    return math.exp(weighted(vals, {"icon": 0.5, "ifs": 0.5}))
+    w = w or {}
+    return math.exp(weighted(vals, {"icon": 0.5 * w.get("icon", 1.0), "ifs": 0.5 * w.get("ifs", 1.0)}))
+
+
+def _contra_factor(h, cC):
+    """Тегло (дъно → 1) на модел, който в t0 противоречи на METAR: дъно до hold_h, после линейно до release_h."""
+    if h <= cC["hold_h"]:
+        return cC["floor"]
+    if h >= cC["release_h"]:
+        return 1.0
+    return cC["floor"] + (1.0 - cC["floor"]) * (h - cC["hold_h"]) / (cC["release_h"] - cC["hold_h"])
 
 
 def _precip_vis(wx, cfg):
@@ -105,9 +115,11 @@ def _row_at(t_axis, mat, ts):
     return (1 - a) * mat[k - 1] + a * mat[k]
 
 
-def _nb_fraction(ic_series, ifs_nb, mask, ts, thr, cfg):
-    """Дял (0–1) на точките под прага: ICON и IFS с равни тегла; NaN, ако няма данни."""
-    fr = []
+def _nb_fraction(ic_series, ifs_nb, mask, ts, thr, cfg, w=None, per_model=False):
+    """Дял (0–1) на точките под прага: ICON и IFS с равни тегла (или w — тегла по модел);
+    NaN, ако няма данни. per_model=True връща {"icon": f, "ifs": f} вместо средното."""
+    w = w or {}
+    fr, names = [], []
     if ic_series is not None and ic_series.get("nb") is not None:
         nb = ic_series["nb"]
         v = _row_at(ic_series["t"], nb["vis"], ts)
@@ -118,14 +130,19 @@ def _nb_fraction(ic_series, ifs_nb, mask, ts, thr, cfg):
                 low = v < thr
                 if c is not None:
                     low = low | (np.isfinite(c) & (c < cfg["ceiling_fog_m"]))
-                fr.append(float(low[ok].mean()))
+                fr.append(float(low[ok].mean())); names.append("icon")
     if ifs_nb is not None:
         v = _row_at(ifs_nb["t"], ifs_nb["vis"], ts)
         if v is not None:
             ok = mask & np.isfinite(v)
             if ok.any():
-                fr.append(float((v[ok] < thr).mean()))
-    return float(np.mean(fr)) if fr else float("nan")
+                fr.append(float((v[ok] < thr).mean())); names.append("ifs")
+    if per_model:
+        return dict(zip(names, fr))
+    if not fr:
+        return float("nan")
+    ws = [w.get(n, 1.0) for n in names]
+    return float(np.average(fr, weights=ws)) if sum(ws) > 0 else float(np.mean(fr))
 
 
 def ifs_nb_series(inp_ifs_nb, icao):
@@ -165,21 +182,48 @@ def compute(icao, cols, metars, models, fog_ap, fog_ok, settings, ifs_nb=None):
         w_max *= P["cf_collapse_factor"]
     onset = _onset_ts(fog_ap, shift) if in_domain else None
 
-    # --- METAR
-    v_m = m0.get("vis_m") if m0 else None
-    base0 = _base_vis(models, t0, vmax)
-    E = (_ln(min(v_m, vmax)) - _ln(base0)) if (v_m and np.isfinite(base0)) else 0.0
-    dd = (m0["temp_c"] - m0["dew_c"]) if (m0 and m0.get("temp_c") is not None
-                                          and m0.get("dew_c") is not None) else None
-    falling = bool(m0 and m1 and m0.get("vis_m") and m1.get("vis_m") and m0["vis_m"] < m1["vis_m"])
-    metar_fg = bool(v_m is not None and v_m < 1000)
-
     # --- маска на околността (обща за ICON и IFS — същите точки)
     ic = models.get("icon")
     mask = None
     if ic is not None and ic.get("nb") is not None:
         mask = _mask(ic["nb"]["hsurf"], ic["nb"]["fr_land"], elev, cfg)
     ifs_s = ifs_nb_series(ifs_nb, icao) if mask is not None else None
+
+    # --- METAR
+    v_m = m0.get("vis_m") if m0 else None
+
+    # --- модел, който в t0 противоречи на METAR (дава мъгла, METAR ≥ 5 km), играе с малко тегло
+    #     (архив 29.10–15.11: такива сигнали не са дали реална мъгла нито веднъж в следващите 12 ч)
+    # Само когато условията НЕ са за мъгла: вятър ≥ wind_min_kt ИЛИ T−Td ≥ dd_min (при тих вятър и T≈Td
+    # радиационната мъгла идва при още добра видимост — LBGO 06.11: 6–9 km, вятър 0–3 kt, T−Td 0–1 → верен сигнал).
+    cC = cfg.get("contra")
+    contra = set()
+    dd_c = (m0["temp_c"] - m0["dew_c"]) if (m0 and m0.get("temp_c") is not None
+                                            and m0.get("dew_c") is not None) else None
+    wind_c = m0.get("wind_kt") if m0 else None
+    not_fogprone = bool((wind_c is not None and wind_c >= (cC or {}).get("wind_min_kt", 8))
+                        or (dd_c is not None and dd_c >= (cC or {}).get("dd_min", 2.0)))
+    if cC and v_m is not None and v_m >= cC["metar_min_m"] and not_fogprone:
+        for n in ("icon", "ifs"):
+            if n in models:
+                pv0 = at(models[n], "vis", t0)
+                if np.isfinite(pv0) and pv0 < cC["model_max_m"]:
+                    contra.add(n)
+        if mask is not None:
+            for n, f in _nb_fraction(ic, ifs_s, mask, t0, cC["model_max_m"], cfg, per_model=True).items():
+                if f >= cC["nb_share"]:
+                    contra.add(n)
+
+    def wts(h):
+        f = _contra_factor(max(h, 0.0), cC) if contra else 1.0
+        return {n: (f if n in contra else 1.0) for n in ("icon", "ifs")}
+
+    base0 = _base_vis(models, t0, vmax, wts(0.0))
+    E = (_ln(min(v_m, vmax)) - _ln(base0)) if (v_m and np.isfinite(base0)) else 0.0
+    dd = (m0["temp_c"] - m0["dew_c"]) if (m0 and m0.get("temp_c") is not None
+                                          and m0.get("dew_c") is not None) else None
+    falling = bool(m0 and m1 and m0.get("vis_m") and m1.get("vis_m") and m0["vis_m"] < m1["vis_m"])
+    metar_fg = bool(v_m is not None and v_m < 1000)
 
     for k, c in enumerate(cols):
         ts = dt.datetime.fromisoformat(c["time"]).timestamp()
@@ -190,7 +234,7 @@ def compute(icao, cols, metars, models, fog_ap, fog_ok, settings, ifs_nb=None):
         if k == 0 and v_m is not None:
             c["vis_m"], c["vis_src"], c["fog_w"] = int(v_m), "M", 0.0
         else:
-            base = _base_vis(models, ts, vmax)
+            base = _base_vis(models, ts, vmax, wts(h))
             if not np.isfinite(base):
                 c["vis_m"], c["vis_src"], c["fog_w"] = None, None, 0.0
             else:
@@ -225,7 +269,7 @@ def compute(icao, cols, metars, models, fog_ap, fog_ok, settings, ifs_nb=None):
             if v_m is not None:
                 cand["METAR"] = (100.0 * math.exp(-h / cfg["tau_h"])) if v_m < thr else 0.0
             if mask is not None:
-                f = _nb_fraction(ic, ifs_s, mask, ts, thr, cfg)
+                f = _nb_fraction(ic, ifs_s, mask, ts, thr, cfg, w=wts(h))
                 if np.isfinite(f):
                     cand["околност"] = 100.0 * f
             if pv is not None and pv < thr:
@@ -265,7 +309,8 @@ def compute(icao, cols, metars, models, fog_ap, fog_ok, settings, ifs_nb=None):
 
     _consistency(cols)
     return {"fog_in_domain": in_domain, "fog_note": fog_note,
-            "nb_points": int(mask.sum()) if mask is not None else 0}
+            "nb_points": int(mask.sum()) if mask is not None else 0,
+            "contra": sorted(contra)}
 
 
 def _deg(p, P):
