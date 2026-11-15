@@ -963,14 +963,20 @@ const ftOf = h => r100(h).toLocaleString("en-US").replace(/,/g, " ");
 //   механична (до 3000 ft над земята): пориви ≥ 35 kt или порив − среден ≥ 15 kt MOD · ≥ 50 SEV;
 //   планински вълни: вятър през билото ≥ 30 kt MOD · ≥ 40 SEV.
 // Срезът като отделен елемент — само под 2000 ft при излитане и кацане (llwsAt).
-const TURB_S = [8, 12], TURB_RI = [0.5, 0.25], GUST_MECH = [35, 50], GUST_DIFF = 15;
+const RI_MIN_DZ = 150, TURB_S = [8, 12], TURB_RI = [0.5, 0.25], GUST_MECH = [35, 50], GUST_DIFF = 15;
 function shearLayers(col, gust) {
   const out = [];
-  const lv = col.filter(c => fin(c.u) && fin(c.v) && fin(c.T) && fin(c.z));
-  for (let i = 0; i < lv.length - 1; i++) {
-    const a = lv[i], b = lv[i + 1];
+  // Само нивата по налягане: приземното „ниво“ (T 2 m, вятър 10 m) не участва —
+  // денем приземното прегряване дава Ri < 0 в слой от ~100 m и лъжлив SEV.
+  // Най-долните стотина метра покриват механичната турбуленция и срезът при излитане/кацане.
+  // Слоевете са поне RI_MIN_DZ дебели (съседни нива се обединяват); Ri < 0 не се брои.
+  const lv = col.filter(c => !c.sfc && fin(c.u) && fin(c.v) && fin(c.T) && fin(c.z));
+  for (let i = 0, j; i < lv.length - 1; i = j) {
+    j = i + 1;
+    while (j < lv.length - 1 && lv[j].z - lv[i].z < RI_MIN_DZ) j++;
+    const a = lv[i], b = lv[j];
     const dz = b.z - a.z;                       // m
-    if (dz < 50) continue;
+    if (dz < RI_MIN_DZ) continue;
     const dV = Math.hypot(b.u - a.u, b.v - a.v); // kt
     const S = dV / (dz / 0.3048 / 1000);        // kt / 1000 ft
     const th = c => (c.T + 273.15) * Math.pow(1000 / c.p, 0.2857);
@@ -978,7 +984,7 @@ function shearLayers(col, gust) {
     const sh = (dV * 0.5144 / dz) ** 2;
     const Ri = sh > 1e-8 ? N2 / sh : Infinity;
     const ws = 0;
-    const turb = S >= TURB_S[1] && Ri < TURB_RI[1] ? 3 : S >= TURB_S[0] && Ri < TURB_RI[0] ? 2 : 0;
+    const turb = Ri < 0 ? 0 : S >= TURB_S[1] && Ri < TURB_RI[1] ? 3 : S >= TURB_S[0] && Ri < TURB_RI[0] ? 2 : 0;
     if (ws || turb) out.push({lo: a.z / 0.3048, hi: b.z / 0.3048, ws, turb, S, Ri, src: "ws"});
   }
   const mean10 = col.length && col[0].sfc && fin(col[0].u) ? Math.hypot(col[0].u, col[0].v) : NaN;
