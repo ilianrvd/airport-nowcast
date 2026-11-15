@@ -263,6 +263,7 @@ thead th.now{background:#EEF1F5}
 .u{color:#6B7280;font-weight:400;font-size:12px}
 .legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12px;color:#374151;align-items:center}
 .legend i{display:inline-block;width:14px;height:14px;border-radius:2px;vertical-align:-2px;margin-right:6px}
+.info{background:#fff;border:1px solid #DDE1E7;border-radius:8px;padding:10px 14px;margin:14px 0 10px;font-size:13.5px;line-height:1.6}
 footer{font-size:12px;color:var(--mut);line-height:1.6}
 """
 
@@ -323,6 +324,8 @@ def main():
 <span>ВИС / УМЕР / НИС: степен, до калибриране (посочи клетката за % и източник)</span>
 <span>Източник: M METAR · К корекция · Ф мъгла · Н nowcast · N модели</span>
 </section>
+<section class="info"><b>Официална информация.</b> За професионална предполетна информация ползвайте официалните продукти: <b>GAMET</b> — портал B-FLIP на ДП РВД; <b>eGAFOR</b> — сайт eGAFOR viewer.<br>
+Контакт: Илиан Манафов · <a href="mailto:ilianm@mail.bg">ilianm@mail.bg</a></section>
 <footer>Експериментален продукт за обучение и проучване. Не е TAF и не замества официалните прогнози.
 Източници: METAR (aviationweather.gov), ICON-EU (DWD), ECMWF IFS, GFS и ALADIN (Open-Meteo), nowcasting-public, модел за мъгла.</footer>
 </main><script>window.GEN={int(now.timestamp() * 1000)};</script><script>{JS}</script><script>{RELOAD_JS}</script></body></html>"""
