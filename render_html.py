@@ -324,7 +324,7 @@ def main():
 <span>ВИС / УМЕР / НИС: степен, до калибриране (посочи клетката за % и източник)</span>
 <span>Източник: M METAR · К корекция · Ф мъгла · Н nowcast · N модели</span>
 </section>
-<section class="info"><b>Официална информация.</b> За професионална предполетна информация ползвайте официалните продукти: <b>GAMET</b> — портал B-FLIP на ДП РВД; <b>eGAFOR</b> — сайт eGAFOR viewer.<br>
+<section class="info"><b>Официална информация.</b> За професионална предполетна информация ползвайте официалните продукти: <b>GAMET</b> — <a href="https://b-flip.bulatsa.com" target="_blank" rel="noopener">портал B-FLIP на ДП РВД</a>; <b>eGAFOR</b> — <a href="https://viewer.egafor.eu/egafor-viewer/" target="_blank" rel="noopener">сайт eGAFOR viewer</a>.<br>
 Контакт: Илиан Манафов · <a href="mailto:ilianm@mail.bg">ilianm@mail.bg</a></section>
 <footer>Експериментален продукт за обучение и проучване. Не е TAF и не замества официалните прогнози.
 Източници: METAR (aviationweather.gov), ICON-EU (DWD), ECMWF IFS, GFS и ALADIN (Open-Meteo), nowcasting-public, модел за мъгла.</footer>
