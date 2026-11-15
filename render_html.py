@@ -314,7 +314,7 @@ def main():
 <style>{CSS}</style></head><body>
 <header><div class="bar"><div class="brand"><b>Летищен nowcasting</b>
 <span class="warn">ЕКСПЕРИМЕНТАЛЕН · НЕ ЗА ОПЕРАТИВНА УПОТРЕБА</span>
-<span class="off">Официална информация: <a href="https://b-flip.bulatsa.com" target="_blank" rel="noopener">B-FLIP</a> · <a href="https://viewer.egafor.eu/egafor-viewer/" target="_blank" rel="noopener">eGAFOR</a></span></div>
+<span class="off">Можете да получите официална информация от: <a href="https://b-flip.bulatsa.com" target="_blank" rel="noopener">B-FLIP</a> · <a href="https://viewer.egafor.eu/egafor-viewer/" target="_blank" rel="noopener">eGAFOR</a></span></div>
 <div class="upd">Обновено <b>{now:%H:%M} UTC</b> · следващо около <b>{nxt:%H:%M} UTC</b></div></div></header>
 <nav class="views" aria-label="Изгледи"><a href="index.html" aria-current="page">Летища</a><a href="route.html">Прогноза по маршрут</a></nav>
 <nav aria-label="Летища">{''.join(nav)}<span class="hint">цвят = най-лошото в следващите 6 ч</span></nav>
