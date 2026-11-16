@@ -1495,8 +1495,8 @@ function drawChart(F) {
     const ft0 = elevM / 0.3048, xa0 = X(s0 * NM_KM), xb0 = X(s1 * NM_KM);
     g += `<rect x="${xa0.toFixed(1)}" y="${Y(ft0 + 2000).toFixed(1)}" width="${Math.max(6, xb0 - xa0).toFixed(1)}" height="${(Y(ft0) - Y(ft0 + 2000)).toFixed(1)}" fill="${LLc[L.level]}" fill-opacity=".5" filter="url(#f-soft)"/>`;
     const lab = L.level === 2 ? "LLWS" : t("wsShort");
-    const lx = Math.max(mL + 2, Math.min(Wd - mR - 60, (xa0 + xb0) / 2 - 30));
-    g += `<g transform="translate(${lx.toFixed(1)},${(Y(ft0 + 2000) - 20).toFixed(1)})"><rect width="60" height="17" rx="8.5" fill="#fff" stroke="${LLc[L.level]}" stroke-width="1.5"/><text x="30" y="12" text-anchor="middle" fill="${L.level === 2 ? "#6E160C" : "#7A3E00"}" font-weight="600">${lab} ${Math.round(L.level === 2 ? L.rate : L.dv)}</text></g>`;
+    const lx = Math.max(mL + 2, Math.min(Wd - mR - 80, (xa0 + xb0) / 2 - 40));
+    g += `<g transform="translate(${lx.toFixed(1)},${(Y(ft0 + 2000) - 20).toFixed(1)})"><rect width="80" height="17" rx="8.5" fill="#fff" stroke="${LLc[L.level]}" stroke-width="1.5"/><text x="40" y="12" text-anchor="middle" fill="${L.level === 2 ? "#6E160C" : "#7A3E00"}" font-weight="600">${lab} ${Math.round(L.level === 2 ? L.rate : L.dv)} kt</text></g>`;
   }
   g += bb;
   // TOC / TOD
