@@ -917,6 +917,11 @@ const VIS_THR = [5000, 1500];              // прагове за VFR, m
 const SPREAD_KT = 10, SPREAD_T = 3;        // голяма разлика между моделите
 const isaT = ft => 15 - 1.98 * ft / 1000;
 
+// Облак на нивото: облачност ≥ 50%, без нея RH (спрямо лед под 0 °C) ≥ 95%
+const inCloud = m => !m || m.below ? false : fin(m.cc) ? m.cc >= CLOUD_CC : fin(m.RH) && rhCloud(m.T, m.RH) >= CLOUD_RH;
+// Обледяване: само RH спрямо вода (преохладени капки); „в облак“ под 0 °C е по леда и не важи
+const icing = m => !!m && !m.below && fin(m.T) && m.T <= ICE_T[1] && m.T >= ICE_T[0] && fin(m.RH) && m.RH >= ICE_RH;
+
 function wmean(vals) {   // {модел: стойност} → средно по W, без NaN
   let a = 0, w = 0;
   for (const [k, x] of Object.entries(vals)) if (fin(x) && W[k]) { a += W[k] * x; w += W[k]; }
@@ -956,9 +961,6 @@ function elements(p, sideVis) {
   e.agl = fin(ter) ? p.alt - ter : NaN;
 
   // Облак на нивото и обледяване — по модели
-  const inCloud = m => m.below ? false : fin(m.cc) ? m.cc >= CLOUD_CC : fin(m.RH) && rhCloud(m.T, m.RH) >= CLOUD_RH;
-  // само RH спрямо вода (преохладени капки); „в облак“ под 0 °C е по леда и не важи за обледяването
-  const icing = m => !m.below && fin(m.T) && m.T <= ICE_T[1] && m.T >= ICE_T[0] && fin(m.RH) && m.RH >= ICE_RH;
   e.cloud = ks.filter(k => inCloud(p.m[k])).length;
   e.ice = ks.filter(k => icing(p.m[k])).length;
 
@@ -1108,6 +1110,26 @@ function llwsAt(d, col, ts) {
 }
 const llwsTxt = L => !L ? "—" : L.level === 2 ? `LLWS ${Math.round(L.rate)} kt/100 ft`
   : `${Math.round(L.dv)} kt ${t("to1600")}`;
+
+// Елементите в част от отсечката P[i-1] → P[i] (f от 0 до 1): облак, обледяване, турбуленция и срез
+// на височината на частта по профила на по-близката точка; останалото (видимост и т.н.) — от нея.
+const SUB = 10;
+function subEl(F, i, f) {
+  const q = F.path[i - 1], p = F.path[i], n = f < 0.5 ? q : p;
+  if (!n.el || !n.el.of) return n.el;
+  const alt = q.alt + f * (p.alt - q.alt);
+  const ms = Object.values(n.cols || {}).map(col => atAlt(col, alt)).filter(Boolean);
+  const e = {...n.el, cloud: ms.filter(inCloud).length, ice: ms.filter(icing).length,
+             turb: Math.max(0, ...(n.lay || []).filter(L => alt >= L.lo && alt <= L.hi).map(L => L.turb))};
+  // срез под 2000 ft над летищата и по пътя (както в computeFlight, но на височината на частта)
+  const depFt = (place(S.from).elev ?? 0) / 0.3048, arrFt = (place(S.to).elev ?? 0) / 0.3048;
+  let lw = 0;
+  if (n.phase === "climb" && alt - depFt <= 2000 && F.llws && F.llws.dep) lw = F.llws.dep.level;
+  if (n.phase === "desc" && alt - arrFt <= 2000 && F.llws && F.llws.arr) lw = Math.max(lw, F.llws.arr.level);
+  if (n.lls && n.lls.level && fin(n.lls0) && alt - n.lls0 <= 2000) lw = Math.max(lw, n.lls.level);
+  e.llws = lw;
+  return e;
+}
 
 function sev(e, p) {
   if (!e || !e.of) return 0;
@@ -1465,20 +1487,36 @@ function drawChart(F) {
     });
   });
 
-  // обледяване: синя прозрачна ивица по полета
+  // Обледяване и цвят на полета по под-отсечки: всяка отсечка между две точки се дели на SUB части;
+  // облакът, обледяването, турбуленцията и срезът се смятат на височината на частта по профила на
+  // по-близката точка (иначе при изкачване цялата отсечка от пистата се оцветява по горната точка).
+  // Непрекъснати участъци с еднакво обледяване/цвят → по една линия (без точки на застъпване)
+  const runs = {ice: [], sv: []};   // [{pts: [[x, y], …], v}]
+  const add = (list, v, x0, y0, x1, y1, i) => {
+    const L = list[list.length - 1];
+    if (L && L.v === v && L.end === `${x0.toFixed(1)},${y0.toFixed(1)}`) {
+      if (L.i === i) L.pts[L.pts.length - 1] = [x1, y1]; else L.pts.push([x1, y1]);   // в една отсечка — права
+    } else list.push({v, pts: [[x0, y0], [x1, y1]]});
+    const N = list[list.length - 1];
+    N.end = `${x1.toFixed(1)},${y1.toFixed(1)}`; N.i = i;
+  };
   P.forEach((p, i) => {
-    if (!i || !p.el || !p.el.ice) return;
+    if (!i) return;
     const q = P[i - 1];
-    g += `<line x1="${X(km(q)).toFixed(1)}" y1="${Y(q.alt).toFixed(1)}" x2="${X(km(p)).toFixed(1)}" y2="${Y(p.alt).toFixed(1)}" stroke="${C_ICE}" stroke-width="14" stroke-opacity="${p.el.ice === p.el.of ? .45 : .22}" stroke-linecap="round"/>`;
+    for (let j = 0; j < SUB; j++) {
+      const f0 = j / SUB, f1 = (j + 1) / SUB, e = subEl(F, i, (f0 + f1) / 2);
+      const xy = f => [X(km(q) + f * (km(p) - km(q))), Y(q.alt + f * (p.alt - q.alt))];
+      const [x0, y0] = xy(f0), [x1, y1] = xy(f1);
+      add(runs.ice, !e || !e.ice ? 0 : e.ice === e.of ? 2 : 1, x0, y0, x1, y1, i);
+      add(runs.sv, e ? sev(e) : 0, x0, y0, x1, y1, i);
+    }
   });
+  const pl = (r, st) => `<polyline points="${r.pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ")}" fill="none" stroke-linejoin="round" ${st}/>`;
+  runs.ice.forEach(r => { if (r.v) g += pl(r, `stroke="${C_ICE}" stroke-width="14" stroke-opacity="${r.v === 2 ? .45 : .22}" stroke-linecap="round"`); });
   // полет: бял ореол + линия, оцветена по оценката
   const fp = P.map(p => `${X(km(p)).toFixed(1)},${Y(p.alt).toFixed(1)}`);
   g += `<polyline points="${fp.join(" ")}" fill="none" stroke="#fff" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/>`;
-  P.forEach((p, i) => {
-    if (!i) return;
-    const q = P[i - 1], sv = Math.max(sev(p.el, p), sev(q.el, q));
-    g += `<line x1="${X(km(q)).toFixed(1)}" y1="${Y(q.alt).toFixed(1)}" x2="${X(km(p)).toFixed(1)}" y2="${Y(p.alt).toFixed(1)}" stroke="${SEV_COL[sv]}" stroke-width="3" stroke-linecap="round"/>`;
-  });
+  runs.sv.forEach(r => { g += pl(r, `stroke="${SEV_COL[r.v]}" stroke-width="3" stroke-linecap="round"`); });
   // срез в ниския слой по пътя (без двата края): от земята на модела до 1600 ft над нея
   P.forEach((p, i) => {
     if (!i || i === P.length - 1 || !p.lls || !p.lls.level || !fin(p.lls0)) return;
