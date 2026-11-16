@@ -912,7 +912,7 @@ const CLOUD_CC = 50, CLOUD_RH = 95;        // в облак: облачност 
 const esW = T => 6.112 * Math.exp(17.67 * T / (T + 243.5));
 const esI = T => 6.112 * Math.exp(22.46 * T / (T + 272.62));
 const rhCloud = (T, RH) => fin(T) && T < 0 ? RH * esW(T) / esI(T) : RH;
-const ICE_T = [-20, 0], ICE_RH = 90;       // риск от обледяване: 0…−20 °C и (облак или RH ≥ 90%)
+const ICE_T = [-20, 0], ICE_RH = 90;       // риск от обледяване: 0…−20 °C и RH спрямо вода ≥ 90%
 const VIS_THR = [5000, 1500];              // прагове за VFR, m
 const SPREAD_KT = 10, SPREAD_T = 3;        // голяма разлика между моделите
 const isaT = ft => 15 - 1.98 * ft / 1000;
@@ -957,8 +957,8 @@ function elements(p, sideVis) {
 
   // Облак на нивото и обледяване — по модели
   const inCloud = m => m.below ? false : fin(m.cc) ? m.cc >= CLOUD_CC : fin(m.RH) && rhCloud(m.T, m.RH) >= CLOUD_RH;
-  const icing = m => !m.below && fin(m.T) && m.T <= ICE_T[1] && m.T >= ICE_T[0]
-                      && (inCloud(m) || (fin(m.RH) && m.RH >= ICE_RH));
+  // само RH спрямо вода (преохладени капки); „в облак“ под 0 °C е по леда и не важи за обледяването
+  const icing = m => !m.below && fin(m.T) && m.T <= ICE_T[1] && m.T >= ICE_T[0] && fin(m.RH) && m.RH >= ICE_RH;
   e.cloud = ks.filter(k => inCloud(p.m[k])).length;
   e.ice = ks.filter(k => icing(p.m[k])).length;
 

@@ -35,7 +35,7 @@ jobs:
         run: pip install -r requirements.txt
 
       # ICON: точките на всеки прогон (JSON, ~100 KB). Пази се последният кеш;
-      # нов прогон се тегли само когато DWD го е пуснал.
+      # нов прогон се тегли само когато DWD го е пуснал, а за текущия — само новите стъпки.
       - name: ICON кеш (възстановяване)
         uses: actions/cache/restore@v4
         with:
@@ -119,7 +119,7 @@ jobs:
           for f in cache/icon/icon_*.json; do
             [ -f "$f" ] || continue
             b=$(basename "$f").gz
-            [ -f "arch/icon/$b" ] || gzip -c "$f" > "arch/icon/$b"
+            gzip -n -c "$f" > "arch/icon/$b"     # прогонът се допълва с нови стъпки → презаписва се
           done
           # ALADIN: веднъж на run (само архив, не влиза в таблицата)
           mkdir -p arch/aladin
