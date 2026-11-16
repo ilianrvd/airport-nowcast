@@ -154,13 +154,15 @@ def at(series: dict, key: str, ts: float) -> float:
 
 
 def gust_at(series: dict, ts: float) -> float:
-    """Поривът е максимум за изминалия час → взима се по-голямото от двата
-    съседни часа, а не интерполация (не бива да го размиваме)."""
+    """Поривът е максимум за изминалия час → без интерполация (не бива да го размиваме):
+    стойността на часа, в който попада ts — t в [ts, ts + 1 ч). На кръгъл час това е поривът
+    на същия час, сдвоен със средния вятър на същия час (до 16.11.2026 се взимаше и следващият
+    час → единични пориви само в колоните на :00)."""
     t, y = series["t"], series["gust"]
     ok = np.isfinite(y)
     if not ok.any() or ts < t[ok][0] - 3600 or ts > t[ok][-1]:
         return float("nan")
-    near = ok & (t >= ts) & (t <= ts + 3600)
+    near = ok & (t >= ts) & (t < ts + 3600)
     if not near.any():
         near = ok & (np.abs(t - ts) <= 3600)
     return float(np.nanmax(y[near])) if near.any() else float("nan")

@@ -80,7 +80,7 @@ def _fetch_aladin(now, airports, cfg, om, cache_dir):
                                 "latitude": ",".join(f"{x:.4f}" for x in lats),
                                 "longitude": ",".join(f"{x:.4f}" for x in lons),
                                 "models": cfg["model"], "hourly": ",".join(hourly),
-                                "forecast_hours": cfg["forecast_hours"], "past_hours": 0,
+                                "forecast_hours": cfg["forecast_hours"], "past_hours": om["past_hours"],   # назад — за грешката спрямо METAR
                                 "wind_speed_unit": "kn", "timezone": "GMT",
                                 "timeformat": "unixtime", "cell_selection": cfg["cell_selection"],
                             })

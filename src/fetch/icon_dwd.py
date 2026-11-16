@@ -138,6 +138,82 @@ def load_cells(airports, cells_file, lat_axis, lon_axis):
     return cells
 
 
+def _run_jobs(jobs, cells, nbc, nb_fields, cfg, tmp, put):
+    """Сваля файловете паралелно; put(kind, f, l, k, vals, nbv) записва стойностите. Връща броя неуспешни."""
+    failed = 0
+    with ThreadPoolExecutor(max_workers=cfg["workers"]) as ex:
+        futs = {ex.submit(_download_points, j[4], cells, tmp,
+                          nbc if (j[0] == "sl" and j[1] in nb_fields) else None): j for j in jobs}
+        for fut in as_completed(futs):
+            kind, f, l, k, url = futs[fut]
+            try:
+                out_ = fut.result()
+            except Exception as e:
+                failed += 1
+                logger.debug(f"{os.path.basename(url)}: {e}")
+                continue
+            put(kind, f, l, k, out_[2], out_[3] if len(out_) == 4 else None)
+    return failed
+
+
+def _jobs(run, step_idx, cfg):
+    """step_idx: [(индекс в масивите, стъпка)] → (вид, поле, ниво, индекс, url)."""
+    base, hh = cfg["base_url"], run.hour
+    jobs = []
+    for k, s in step_idx:
+        for f in cfg["single_level"]:
+            jobs.append(("sl", f, None, k, f"{base}/{hh:02d}/{f}/{_fname_sl(run, s, f)}"))
+        for f, levs in cfg["pressure_level"].items():
+            for l in levs:
+                jobs.append(("pl", f, l, k, f"{base}/{hh:02d}/{f}/{_fname_pl(run, s, l, f)}"))
+    return jobs
+
+
+def _extend(cached, run, steps, cfg, out_path):
+    """Добавя към кеширания прогон стъпките от steps, които липсват (само в края)."""
+    old = cached["steps"]
+    new = [s for s in steps if s > old[-1]]
+    if not new:                                   # липсват само по-ранни стъпки — не са нужни
+        return cached
+    res = cached["airports"]
+    cells = {ic: tuple(a["cell"]) for ic, a in res.items()}
+    nbc = {ic: [tuple(c) for c in a["nb"]["cells"]] for ic, a in res.items()}
+    nb_fields = cfg.get("nb_fields", [])
+    n0 = len(old)
+    for a in res.values():
+        for f in a["sl"]:
+            a["sl"][f] += [None] * len(new)
+        for levs in a["pl"].values():
+            for l in levs:
+                levs[l] += [None] * len(new)
+        for f in nb_fields:
+            a["nb"][f] += [None] * len(new)
+
+    def put(kind, f, l, k, vals, nbv):
+        if nbv is not None:
+            for ic, lst in nbv.items():
+                res[ic]["nb"][f][k] = lst
+        for ic, v in vals.items():
+            if kind == "sl":
+                res[ic]["sl"][f][k] = v
+            else:
+                res[ic]["pl"][f][str(l)][k] = v
+
+    jobs = _jobs(run, [(n0 + i, s) for i, s in enumerate(new)], cfg)
+    logger.info(f"ICON {run:%Y-%m-%d %H}Z от кеша + {len(jobs)} файла за стъпки {new[0]}–{new[-1]}")
+    with tempfile.TemporaryDirectory() as tmp:
+        failed = _run_jobs(jobs, cells, nbc, nb_fields, cfg, tmp, put)
+    if failed:
+        logger.warning(f"ICON: {failed} от {len(jobs)} файла не се свалиха (полето липсва или мрежа)")
+    cached["steps"] = old + new
+    cached["valid"] = [(run + dt.timedelta(hours=s)).isoformat() for s in cached["steps"]]
+    cached["fetched"] = dt.datetime.now(dt.timezone.utc).isoformat()
+    cached["failed_files"] = cached.get("failed_files", 0) + failed
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(cached, f, ensure_ascii=False)
+    return cached
+
+
 def fetch_icon(now, airports, cfg, horizon_h, cache_dir, cells_file):
     """Връща (път до JSON, dict). Ако run-ът вече е в кеша — само го чете."""
     os.makedirs(os.path.join(cache_dir, "icon"), exist_ok=True)
@@ -145,13 +221,20 @@ def fetch_icon(now, airports, cfg, horizon_h, cache_dir, cells_file):
     if run is None:
         raise RuntimeError("ICON-EU: няма пълен run в последните run-ове")
     out_path = os.path.join(cache_dir, "icon", f"icon_{run:%Y%m%d%H}.json")
+    cached = None
     if os.path.exists(out_path):
         with open(out_path, encoding="utf-8") as f:
             cached = json.load(f)
         has_nb = all("nb" in a for a in cached.get("airports", {}).values())
-        if cached.get("steps", [])[-1:] >= steps[-1:] and (has_nb or not cfg.get("nb_fields")):
+        if not (has_nb or not cfg.get("nb_fields")) or set(cached.get("airports", {})) != set(airports):
+            cached = None                       # стар формат → тегли се наново
+        elif not [s for s in steps if s not in cached["steps"]]:
             logger.info(f"ICON {run:%Y-%m-%d %H}Z от кеша")
             return out_path, cached
+    if cached is not None:
+        # Същият прогон, но с нови часове в края (хоризонтът се мести с всеки час):
+        # теглят се само липсващите стъпки и се добавят към кеша.
+        return out_path, _extend(cached, run, steps, cfg, out_path)
 
     base, hh = cfg["base_url"], run.hour
     with tempfile.TemporaryDirectory() as tmp:
@@ -188,37 +271,20 @@ def fetch_icon(now, airports, cfg, horizon_h, cache_dir, cells_file):
                            **{f: [None] * len(steps) for f in nb_fields}}}
                for ic in airports}
 
-        # 2) Списък със задачи: (вид, поле, ниво, индекс на стъпка, url)
-        jobs = []
-        for k, s in enumerate(steps):
-            for f in cfg["single_level"]:
-                jobs.append(("sl", f, None, k, f"{base}/{hh:02d}/{f}/{_fname_sl(run, s, f)}"))
-            for f, levs in cfg["pressure_level"].items():
-                for l in levs:
-                    jobs.append(("pl", f, l, k, f"{base}/{hh:02d}/{f}/{_fname_pl(run, s, l, f)}"))
+        # 2) Сваляне на всички стъпки
+        def put(kind, f, l, k, vals, nbv):
+            if nbv is not None:
+                for ic, lst in nbv.items():
+                    res[ic]["nb"][f][k] = lst
+            for ic, v in vals.items():
+                if kind == "sl":
+                    res[ic]["sl"][f][k] = v
+                else:
+                    res[ic]["pl"][f][str(l)][k] = v
 
+        jobs = _jobs(run, list(enumerate(steps)), cfg)
         logger.info(f"ICON {run:%Y-%m-%d %H}Z: {len(jobs)} файла, стъпки {steps[0]}–{steps[-1]}")
-        failed = 0
-        with ThreadPoolExecutor(max_workers=cfg["workers"]) as ex:
-            futs = {ex.submit(_download_points, j[4], cells, tmp,
-                              nbc if (j[0] == "sl" and j[1] in nb_fields) else None): j for j in jobs}
-            for fut in as_completed(futs):
-                kind, f, l, k, url = futs[fut]
-                try:
-                    out_ = fut.result()
-                except Exception as e:
-                    failed += 1
-                    logger.debug(f"{os.path.basename(url)}: {e}")
-                    continue
-                vals = out_[2]
-                if len(out_) == 4:
-                    for ic, lst in out_[3].items():
-                        res[ic]["nb"][f][k] = lst
-                for ic, v in vals.items():
-                    if kind == "sl":
-                        res[ic]["sl"][f][k] = v
-                    else:
-                        res[ic]["pl"][f][str(l)][k] = v
+        failed = _run_jobs(jobs, cells, nbc, nb_fields, cfg, tmp, put)
         if failed:
             logger.warning(f"ICON: {failed} от {len(jobs)} файла не се свалиха (полето липсва или мрежа)")
 
