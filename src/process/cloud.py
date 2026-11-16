@@ -104,7 +104,7 @@ def compute(cols, metars, models, nowcast_ap, settings):
         ts = dt.datetime.fromisoformat(c["time"]).timestamp()
         h = (ts - t0) / 3600
         f = math.exp(-h / tau)
-        fog = bool(c.get("wx")) and "FG" in c["wx"]
+        fog = any(g.lstrip("+-") in ("FG", "FZFG") for g in (c.get("wx") or "").split())
 
         if k == 0 and m0 is not None:
             ceil = cm if (cm is not None and cm < high) else None

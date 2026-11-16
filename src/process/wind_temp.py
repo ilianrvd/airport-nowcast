@@ -19,7 +19,6 @@ X(t) = средно от моделите + B_stat + E_METAR · exp(−t/τ)
 """
 
 import math
-import datetime as dt
 
 import numpy as np
 

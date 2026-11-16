@@ -115,7 +115,7 @@ def _row_at(t_axis, mat, ts):
     return (1 - a) * mat[k - 1] + a * mat[k]
 
 
-def _nb_fraction(ic_series, ifs_nb, mask, ts, thr, cfg, w=None, per_model=False):
+def _nb_fraction(ic_series, ifs_nb, mask, ts, thr, cfg, w=None, per_model=False, ceiling_ref="agl"):
     """Дял (0–1) на точките под прага: ICON и IFS с равни тегла (или w — тегла по модел);
     NaN, ако няма данни. per_model=True връща {"icon": f, "ifs": f} вместо средното."""
     w = w or {}
@@ -129,6 +129,8 @@ def _nb_fraction(ic_series, ifs_nb, mask, ts, thr, cfg, w=None, per_model=False)
             if ok.any():
                 low = v < thr
                 if c is not None:
+                    if ceiling_ref == "msl":          # ceiling над морето → над терена на клетката
+                        c = c - nb["hsurf"]
                     low = low | (np.isfinite(c) & (c < cfg["ceiling_fog_m"]))
                 fr.append(float(low[ok].mean())); names.append("icon")
     if ifs_nb is not None:
@@ -210,7 +212,8 @@ def compute(icao, cols, metars, models, fog_ap, fog_ok, settings, ifs_nb=None):
                 if np.isfinite(pv0) and pv0 < cC["model_max_m"]:
                     contra.add(n)
         if mask is not None:
-            for n, f in _nb_fraction(ic, ifs_s, mask, t0, cC["model_max_m"], cfg, per_model=True).items():
+            for n, f in _nb_fraction(ic, ifs_s, mask, t0, cC["model_max_m"], cfg, per_model=True,
+                                     ceiling_ref=settings.CEILING_REF).items():
                 if f >= cC["nb_share"]:
                     contra.add(n)
 
@@ -269,7 +272,7 @@ def compute(icao, cols, metars, models, fog_ap, fog_ok, settings, ifs_nb=None):
             if v_m is not None:
                 cand["METAR"] = (100.0 * math.exp(-h / cfg["tau_h"])) if v_m < thr else 0.0
             if mask is not None:
-                f = _nb_fraction(ic, ifs_s, mask, ts, thr, cfg, w=wts(h))
+                f = _nb_fraction(ic, ifs_s, mask, ts, thr, cfg, w=wts(h), ceiling_ref=settings.CEILING_REF)
                 if np.isfinite(f):
                     cand["околност"] = 100.0 * f
             if pv is not None and pv < thr:
@@ -330,7 +333,7 @@ def _consistency(cols):
         add = None
         if c["vis_m"] < 1000 and not has_precip:
             add = "FG" if (c.get("t_raw") is None or c["t_raw"] > 0) else "FZFG"
-        elif c["vis_m"] < 5000 and dd is not None and dd <= 2:
+        elif 1000 <= c["vis_m"] < 5000 and dd is not None and dd <= 2:
             add = "BR"
         if add and add not in wx:
             c["wx"] = (wx + " " + add).strip()

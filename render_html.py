@@ -41,7 +41,8 @@ def k_cig(c):
 def k_wx(w):
     if not w:
         return "none"
-    if any(x in w for x in ("FG", "TS", "FZ", "+")):
+    # мъгла = FG / FZFG като отделна група (BCFG, MIFG, PRFG, VCFG не са)
+    if any(g.lstrip("+-") in ("FG", "FZFG") for g in w.split()) or any(x in w for x in ("TS", "FZ", "+")):
         return "crit"
     return "info"
 
@@ -187,7 +188,6 @@ def age_txt(iso, now):
 
 def panel(icao, a, meta, now, active):
     name = S.AIRPORTS[icao]["name"]
-    cols = a["cols"]
     fm = a.get("fog_model")
     if fm:
         s = fm.get("summary") or {}
