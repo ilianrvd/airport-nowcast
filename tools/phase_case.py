@@ -17,7 +17,7 @@ import requests
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from config.settings import AIRPORTS
-from src.process.phase import wet_bulb_from_td, wb_integral, classify, wet_bulb
+from src.process.phase import wet_bulb_from_td, wb_integral, classify
 
 URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
 LEVELS = [1000, 950, 925, 900, 850, 800, 700, 600]

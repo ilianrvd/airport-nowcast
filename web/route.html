@@ -458,6 +458,7 @@ function defaultEtd() {
   return d;
 }
 const pad = n => String(n).padStart(2, "0");
+const hmm = min => { const m = Math.round(min); return `${Math.floor(m / 60)}:${pad(m % 60)}`; };   // ч:мм (без „1:60“)
 function toInput(d) {   // Date → "YYYY-MM-DDTHH:MM" в UTC
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
 }
@@ -866,19 +867,17 @@ async function computeFlight() {
     const col = (p.cols || {}).icon, m = (p.m || {}).icon;
     p.lay = col ? shearLayers(col, m && m.gust) : [];
     p.mtw = col && stenE ? mountainWave(col, [stenE[4 * i], stenE[4 * i + 1], stenE[4 * i + 2], stenE[4 * i + 3]], m && m.elev) : null;
-    if (p.mtw) p.lay.push({lo: p.mtw.lo, hi: p.mtw.hi, ws: 0, turb: p.mtw.level, S: 0, Ri: NaN, mtw: true, src: "mtw"});
+    if (p.mtw) p.lay.push({lo: p.mtw.lo, hi: p.mtw.hi, turb: p.mtw.level, S: 0, Ri: NaN, mtw: true, src: "mtw"});
     // конвективна турбуленция (до етап 7 — от модела): CAPE и конвективен валеж
     if (col && m && fin(m.cape)) {
       const cv = m.cape >= CONV_CAPE[1] ? 3 : m.cape >= CONV_CAPE[0] && fin(m.shw) && m.shw >= CONV_SHW ? 2 : 0;
-      if (cv) p.lay.push({lo: col[0].z / 0.3048, hi: CONV_TOP, ws: 0, turb: cv, S: 0, Ri: NaN, src: "conv", cape: m.cape, shw: m.shw});
+      if (cv) p.lay.push({lo: col[0].z / 0.3048, hi: CONV_TOP, turb: cv, S: 0, Ri: NaN, src: "conv", cape: m.cape, shw: m.shw});
     }
     // срез в ниския слой (до 1600 / 2000 ft над земята) по целия маршрут
     p.lls = col && data.icon ? llwsAt(data.icon[i], col, ts) : null;
     p.lls0 = col ? col[0].z / 0.3048 : NaN;
     const here = p.lay.filter(L => p.alt >= L.lo && p.alt <= L.hi);
     p.el.turb = Math.max(0, ...here.map(L => L.turb));
-    p.el.ws = Math.max(0, ...here.map(L => L.ws));
-    p.el.shear = Math.max(0, ...here.map(L => L.S));
     p.el.mtw = here.some(L => L.mtw) ? p.mtw : null;
     p.el.turbL = here.filter(L => L.turb).sort((a, b) => b.turb - a.turb)[0] || null;   // водещият слой на нивото
   });
@@ -893,7 +892,7 @@ async function computeFlight() {
     // по пътя: когато полетът е до 2000 ft над земята на модела
     if (p.lls && p.lls.level && fin(p.lls0) && p.alt - p.lls0 <= 2000) p.el.llws = Math.max(p.el.llws || 0, p.lls.level);
   });
-  F.terrain = terrain; F.errors = errors; F.data = data;
+  F.terrain = terrain; F.errors = errors;
   return F;
 }
 
@@ -1016,15 +1015,14 @@ function shearLayers(col, gust) {
     const N2 = 9.81 / ((th(a) + th(b)) / 2) * (th(b) - th(a)) / dz;
     const sh = (dV * 0.5144 / dz) ** 2;
     const Ri = sh > 1e-8 ? N2 / sh : Infinity;
-    const ws = 0;
     const turb = Ri < 0 ? (a.z - zg >= RI_NEG_AGL && S >= TURB_S[0] ? 2 : 0)
                : S >= TURB_S[1] && Ri < TURB_RI[1] ? 3 : S >= TURB_S[0] && Ri < TURB_RI[0] ? 2 : 0;
-    if (ws || turb) out.push({lo: a.z / 0.3048, hi: b.z / 0.3048, ws, turb, S, Ri, src: "ws"});
+    if (turb) out.push({lo: a.z / 0.3048, hi: b.z / 0.3048, turb, S, Ri, src: "ws"});
   }
   const mean10 = col.length && col[0].sfc && fin(col[0].u) ? Math.hypot(col[0].u, col[0].v) : NaN;
   if (fin(gust) && col.length && (gust >= GUST_MECH[0] || (fin(mean10) && gust - mean10 >= GUST_DIFF))) {
     const z0 = col[0].z / 0.3048;
-    out.push({lo: z0, hi: z0 + 3000, ws: 0, turb: gust >= GUST_MECH[1] ? 3 : 2, S: 0, Ri: NaN, mech: true, src: "mech", gust});
+    out.push({lo: z0, hi: z0 + 3000, turb: gust >= GUST_MECH[1] ? 3 : 2, S: 0, Ri: NaN, src: "mech", gust});
   }
   return out;
 }
@@ -1168,11 +1166,13 @@ function tableCol(T, icao, t) {
   }
   return bd <= 45 * 60000 ? best : null;
 }
+// Мъгла = FG / FZFG като отделна група (BCFG, MIFG, PRFG, VCFG не са), TS, FZ
+const WX_CRIT = /(^|\s)[+-]?(FZ)?FG(\s|$)|TS|FZ/;
 // Степен като в летищната таблица: 2 червено, 1 жълто, 0 нищо
 function endSev(c) {
   if (!c) return 0;
   const wx = c.wx || "";
-  if ((fin(c.vis_m) && c.vis_m < 1000) || (fin(c.ceiling_ft) && c.ceiling_ft < 200) || /FG|TS|FZ/.test(wx)) return 2;
+  if ((fin(c.vis_m) && c.vis_m < 1000) || (fin(c.ceiling_ft) && c.ceiling_ft < 200) || WX_CRIT.test(wx)) return 2;
   if ((fin(c.vis_m) && c.vis_m < 2000) || (fin(c.ceiling_ft) && c.ceiling_ft < 1500) || (fin(c.gust_kt) && c.gust_kt >= 25)
       || (c.p_cig1500 || 0) >= 30 || (c.p_lt2000 || 0) >= 30 || (c.p_icing || 0) >= 30) return 1;
   return 0;
@@ -1212,7 +1212,7 @@ function endBlock(T, icao, ts, lab) {
   if (c.p_icing) pr.push(`P(FZ) ${c.p_icing}%`);
   return {sev: sv, html: `<div class="end"><h3>${lab}: ${name} <span>${hhmmUtc(new Date(ts))} UTC · ${t("endCol")} ${c.lead}</span></h3>`
     + `<div class="row"><span>${t("endWind")} <b>${wind}</b></span><span>${t("endVis")} ${tag(vis, visK)}</span>`
-    + `<span>${t("endCig")} ${tag(cig, cigK)}</span>${c.wx ? `<span>${tag(c.wx, /FG|TS|FZ/.test(c.wx) ? "c-crit" : "c-info")}</span>` : ""}`
+    + `<span>${t("endCig")} ${tag(cig, cigK)}</span>${c.wx ? `<span>${tag(c.wx, WX_CRIT.test(c.wx) ? "c-crit" : "c-info")}</span>` : ""}`
     + `<span>T/Td <b>${c.t ?? "—"}/${c.td ?? "—"}</b></span></div>`
     + (pr.length ? `<div class="hint">${pr.join(" · ")}</div>` : "") + `</div>`};
 }
@@ -1261,7 +1261,7 @@ function drawResults(F, endSevMax = 0) {
   const agl = cr.map(p => p.el.agl).filter(fin);
   const min = (F.eta - S.etd) / 60000;
   $("overall").innerHTML = `<h2>${t("ovTitle")}</h2><span class="ov-st ${st[0]}">${st[1]}</span><ul class="ov">`
-    + `<li>${place(S.from).short} ${hhmmUtc(S.etd)} → ${place(S.to).short} <b>${hhmmUtc(F.eta)} UTC</b> · ${Math.floor(min / 60)}:${pad(Math.round(min % 60))} · FL${String(S.fl).padStart(3, "0")}</li>`
+    + `<li>${place(S.from).short} ${hhmmUtc(S.etd)} → ${place(S.to).short} <b>${hhmmUtc(F.eta)} UTC</b> · ${hmm(min)} · FL${String(S.fl).padStart(3, "0")}</li>`
     + ovW
     + `<li>${t("ovFzl")}: <b>${fz.length ? ftOf(Math.min(...fz)) + " ft" : "—"}</b></li>`
     + `<li>${t("ovAgl")}: <b>${agl.length ? ftOf(Math.min(...agl)) + " ft" : "—"}</b>`
@@ -1282,7 +1282,7 @@ function drawResults(F, endSevMax = 0) {
 // ---------------------------------------------------------------
 // Разрез + лента с елементите — една графика с обща ос по разстоянието
 // ---------------------------------------------------------------
-const C_CLOUD = "#2E9E5B", C_ICE = "#2563EB", C_FZL = "#B45309", C_TURB = "#E5B300";
+const C_ICE = "#2563EB", C_FZL = "#B45309", C_TURB = "#E5B300";
 const TURB_COL = [null, "#F2CF3A", "#F08A24", "#D7352B"];   // LGT, MOD, SEV
 const TURB_ICAO = [null, "LGT", "MOD", "SEV"];
 const BARB_LEVELS = [0, 1500, 3000, 4500];   // ft под нивото на полета
@@ -1337,7 +1337,6 @@ function drawChart(F) {
   const defs = `<defs>
     <linearGradient id="g-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#D9E6F4"/><stop offset="1" stop-color="#F4F8FC"/></linearGradient>
     <linearGradient id="g-ter" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#CDBB9C"/><stop offset="1" stop-color="#EDE5D7"/></linearGradient>
-    <filter id="f-cloud" x="-5%" y="-20%" width="110%" height="140%"><feGaussianBlur stdDeviation="5"/></filter>
     <filter id="f-soft" x="-10%" y="-30%" width="120%" height="160%"><feGaussianBlur stdDeviation="7"/></filter>
     <filter id="f-cl" x="-10%" y="-30%" width="120%" height="160%"><feTurbulence type="fractalNoise" baseFrequency=".03 .06" numOctaves="3" seed="4" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="9" xChannelSelector="R" yChannelSelector="G"/><feGaussianBlur stdDeviation=".7"/></filter>
     <filter id="f-cls" x="-10%" y="-30%" width="120%" height="170%"><feTurbulence type="fractalNoise" baseFrequency=".03 .06" numOctaves="3" seed="4" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="9" xChannelSelector="R" yChannelSelector="G"/><feGaussianBlur stdDeviation="4"/></filter>
@@ -1745,7 +1744,7 @@ async function calculate() {
     if (seq !== calcSeq) return;
     const errs = Object.entries(F.errors).map(([k, e]) => `${k.toUpperCase()}: ${t("noModel")} (${e})`);
     const min = (F.eta - S.etd) / 60000;
-    $("status").textContent = `${t("runInfo")} ${hhmmUtc(new Date())} UTC · ${t("time")} ${Math.floor(min / 60)}:${pad(Math.round(min % 60))} · ETA ${hhmmUtc(F.eta)} UTC`
+    $("status").textContent = `${t("runInfo")} ${hhmmUtc(new Date())} UTC · ${t("time")} ${hmm(min)} · ETA ${hhmmUtc(F.eta)} UTC`
       + (errs.length ? ` · ${errs.join(" · ")}` : "");
     drawData(F);
     drawResults(F, drawEnds(F, T));
@@ -2036,7 +2035,7 @@ function drawSummary(ok, F = null) {
   }
   F = F || buildFlight();
   const min = (F.eta - S.etd) / 60000;
-  const hm = `${Math.floor(min / 60)}:${pad(Math.round(min % 60))}`;
+  const hm = `${hmm(min)}`;
   const fl = String(Math.round(F.vp.top / 100)).padStart(3, "0");
   $("sum").innerHTML = `<span>${t("dist")} <b>${Math.round(F.total * NM_KM)} km</b></span>`
     + `<span>${t("time")} <b>${hm}</b></span>`

@@ -77,7 +77,7 @@ def main():
         log.error(f"IFS околност: {e}")
         inputs["errors"]["ifs_nb"] = str(e)
 
-    # ALADIN — само архив (не влиза в таблицата)
+    # ALADIN — вятър в таблицата + архив
     try:
         path, run, new = fetch_aladin(now, AIRPORTS, ALADIN, OPEN_METEO, CACHE_DIR)
         inputs["aladin"] = {"file": os.path.relpath(path, CACHE_DIR), "run": run, "new": new}
@@ -135,10 +135,6 @@ def summary(inputs, now):
                          if isinstance(arr, list) and not any(x is not None for x in arr)]
                 if empty:
                     print(f"     {icao} празни: {', '.join(empty)}")
-            ap0 = d["airports"].get("LBSF", {})
-            cb = ap0.get("cloud_base")
-            if cb is not None:
-                print(f"     LBSF cloud_base (m): {cb[:8]}")
     nc = inputs.get("nowcast")
     if nc:
         src = ", ".join(f"{k} {v.get('source')}" for k, v in nc.get("airports", {}).items())

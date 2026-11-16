@@ -318,7 +318,6 @@ def report(acc, icaos, models):
     print("\n(POD/FAR, в скоби броят на наблюдаваните събития)")
 
     print(f"\n{'=' * 78}\nФаза при валеж и в двете (METAR → модел), всички летища\n{'=' * 78}")
-    cats = ("SN", "RASN", "RA", "FZ")
     for m in models:
         for lb in lbs:
             tab = acc.phase.get((m, lb))
