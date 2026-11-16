@@ -1335,11 +1335,14 @@ function drawChart(F) {
   const km = p => p.s * NM_KM;
   const xa = i => X(i ? (km(P[i - 1]) + km(P[i])) / 2 : 0), xb = i => X(i < P.length - 1 ? (km(P[i + 1]) + km(P[i])) / 2 : total);
   const defs = `<defs>
-    <linearGradient id="g-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#EEF3FA"/><stop offset="1" stop-color="#FBFCFD"/></linearGradient>
+    <linearGradient id="g-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#D9E6F4"/><stop offset="1" stop-color="#F4F8FC"/></linearGradient>
     <linearGradient id="g-ter" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#CDBB9C"/><stop offset="1" stop-color="#EDE5D7"/></linearGradient>
     <filter id="f-cloud" x="-5%" y="-20%" width="110%" height="140%"><feGaussianBlur stdDeviation="5"/></filter>
-    <pattern id="p-ws1" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="7" stroke="${C_TURB}" stroke-width="2.2"/></pattern>
-    <pattern id="p-ws2" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="${TURB_COL[2]}" stroke-width="2.6"/></pattern>
+    <filter id="f-soft" x="-10%" y="-30%" width="120%" height="160%"><feGaussianBlur stdDeviation="7"/></filter>
+    <filter id="f-cl" x="-10%" y="-30%" width="120%" height="160%"><feTurbulence type="fractalNoise" baseFrequency=".03 .06" numOctaves="3" seed="4" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="9" xChannelSelector="R" yChannelSelector="G"/><feGaussianBlur stdDeviation=".7"/></filter>
+    <filter id="f-cls" x="-10%" y="-30%" width="120%" height="170%"><feTurbulence type="fractalNoise" baseFrequency=".03 .06" numOctaves="3" seed="4" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="9" xChannelSelector="R" yChannelSelector="G"/><feGaussianBlur stdDeviation="4"/></filter>
+    <linearGradient id="g-cl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset=".6" stop-color="#EEF2F8"/><stop offset="1" stop-color="#C3CFDF"/></linearGradient>
+    <radialGradient id="g-pf" cx=".42" cy=".35" r=".75"><stop offset="0" stop-color="#fff"/><stop offset=".65" stop-color="#F1F4F9"/><stop offset="1" stop-color="#C8D3E2"/></radialGradient>
     <clipPath id="c-sec"><rect x="${mL}" y="${yTop}" width="${pw}" height="${H_SEC}"/></clipPath>
   </defs>`;
   let g = `<rect x="${mL}" y="${yTop}" width="${pw}" height="${H_SEC}" fill="url(#g-sky)" rx="6"/>`;
@@ -1351,8 +1354,8 @@ function drawChart(F) {
     g += `<text x="${mL - 10}" y="${Y(ft) + 4}" text-anchor="end" class="ax">${ft ? "FL" + String(ft / 100).padStart(3, "0") : "SFC"}</text>`;
   }
 
-  // облак: клетки по нивата, размити — меки облачни маси, прозрачни
-  let cl1 = "", cl2 = "";
+  // облак: слоеве по колоните, свързани в обща форма; купести (дебели) — с „кълба“ и наковалня
+  const cloudRuns = {};
   P.forEach((p, i) => {
     const lay = {};
     for (const k of Object.keys(p.cols || {})) {
@@ -1364,13 +1367,55 @@ function drawChart(F) {
         (lay[c.p] = lay[c.p] || {n: 0, lo, hi}).n++;
       });
     }
-    for (const Lr of Object.values(lay)) {
+    for (const [pk, Lr] of Object.entries(lay)) {
       if (Lr.lo >= yMax) continue;
-      const r = `<rect x="${(xa(i) - 2).toFixed(1)}" y="${Y(Lr.hi).toFixed(1)}" width="${(xb(i) - xa(i) + 4).toFixed(1)}" height="${(Y(Lr.lo) - Y(Lr.hi)).toFixed(1)}" rx="8"/>`;
-      if (Lr.n >= 2 || Object.keys(MODELS).length === 1) cl2 += r; else cl1 += r;
+      const conf = (Lr.n >= 2 || Object.keys(MODELS).length === 1) ? 1 : 0;
+      const key = pk + "|" + conf, runs = cloudRuns[key] = cloudRuns[key] || [];
+      const last = runs[runs.length - 1];
+      if (last && last.i1 === i - 1) { last.cells.push({i, lo: Lr.lo, hi: Lr.hi}); last.i1 = i; }
+      else runs.push({conf, i0: i, i1: i, cells: [{i, lo: Lr.lo, hi: Lr.hi}]});
     }
   });
-  g += `<g clip-path="url(#c-sec)" fill="${C_CLOUD}"><g opacity=".22" filter="url(#f-cloud)">${cl1}</g><g opacity="${Object.keys(MODELS).length === 1 ? .32 : .45}" filter="url(#f-cloud)">${cl2}</g></g>`;
+  let clSh = "", clMain = "", clSh0 = "", clMain0 = "";
+  const nz = (x, ph) => 1 + .5 * Math.sin(x / 5 + ph) + .35 * Math.sin(x / 2.3 + ph * 1.7) + .2 * Math.sin(x / 1.1 + ph * .6);
+  Object.entries(cloudRuns).forEach(([key, runs]) => runs.forEach((r, ri) => {
+    const ph = (key.length * 3.1 + ri * 1.7 + r.i0) % 6.28;
+    const top = [], bot = [], n = r.cells.length;
+    const x0 = xa(r.i0), x1 = xb(r.i1), thick = Math.max(...r.cells.map(c => c.hi - c.lo));
+    const cu = thick > 5000;
+    const xs = [x0]; r.cells.forEach(c => xs.push((xa(c.i) + xb(c.i)) / 2)); xs.push(x1);
+    const ys = [r.cells[0], ...r.cells, r.cells[n - 1]];
+    xs.forEach((x, j) => {
+      const c = ys[j], end = (j === 0 || j === xs.length - 1) ? .35 : 1, mid = c.lo + (c.hi - c.lo) / 2;
+      const hh = (c.hi - c.lo) / 2 * end * (cu ? 1 : (.85 + .15 * nz(x, ph) / 2));
+      top.push([x, Y(mid + hh)]);
+      bot.push([x, Y(mid - hh) + (cu ? 0 : 3 * Math.sin(x / 7 + ph))]);
+    });
+    const d = smooth(top.concat(bot.reverse())) + "Z";
+    const sh = `<path d="${d}" transform="translate(0,5)" fill="#7D8EA6" fill-opacity=".38"/>`, mn = `<path d="${d}" fill="url(#g-cl)"/>`;
+    let pf = "", ps = "";
+    if (cu) {   // кълба по горния ръб и наковалня при най-високия връх
+      let hiMax = -1, hx = x0;
+      r.cells.forEach(c => { if (c.hi > hiMax) { hiMax = c.hi; hx = (xa(c.i) + xb(c.i)) / 2; } });
+      r.cells.forEach(c => {
+        const cx = (xa(c.i) + xb(c.i)) / 2, w = xb(c.i) - xa(c.i);
+        for (let k = 0; k < 7; k++) {
+          const f = k / 6, yy = Y(c.lo + (c.hi - c.lo) * (.25 + .75 * f)), rr = 6 + 8 * (1 - f) + 3 * nz(cx + k * 3, ph) / 2;
+          const xx = cx + (nz(k * 5 + cx, ph) - 1) * w * .22;
+          ps += `<circle cx="${xx.toFixed(1)}" cy="${yy.toFixed(1)}" r="${rr.toFixed(1)}" fill="#7D8EA6" fill-opacity=".30" transform="translate(0,5)"/>`;
+          pf += `<circle cx="${xx.toFixed(1)}" cy="${yy.toFixed(1)}" r="${rr.toFixed(1)}" fill="url(#g-pf)"/>`;
+        }
+      });
+      if (thick > 9000) {
+        const ay = Y(hiMax) + 2;
+        ps += `<ellipse cx="${hx.toFixed(1)}" cy="${(ay + 5).toFixed(1)}" rx="52" ry="7" fill="#7D8EA6" fill-opacity=".3"/>`;
+        pf += `<ellipse cx="${hx.toFixed(1)}" cy="${ay.toFixed(1)}" rx="52" ry="7" fill="url(#g-cl)"/>`;
+      }
+    }
+    if (r.conf) { clSh += sh + ps; clMain += mn + pf; } else { clSh0 += sh + ps; clMain0 += mn + pf; }
+  }));
+  g += `<g clip-path="url(#c-sec)"><g opacity=".5"><g filter="url(#f-cls)">${clSh0}</g><g filter="url(#f-cl)">${clMain0}</g></g>`
+    + `<g filter="url(#f-cls)">${clSh}</g><g filter="url(#f-cl)">${clMain}</g></g>`;
 
   // нулева изотерма с етикет-хапче
   const fzp = P.filter(p => p.el && fin(p.el.fzl) && p.el.fzl <= yMax).map(p => [X(km(p)), Y(p.el.fzl)]);
@@ -1380,17 +1425,22 @@ function drawChart(F) {
       + `<g transform="translate(${(lp[0] - 40).toFixed(1)},${(lp[1] - 9).toFixed(1)})"><rect width="36" height="18" rx="9" fill="#fff" stroke="${C_FZL}"/><text x="18" y="12.5" text-anchor="middle" fill="${C_FZL}" font-weight="600">0 °C</text></g>`;
   }
 
-  // турбуленция (жълто, плътно) и срез (жълто, щриховано) по слоевете
-  let tb = "", wsr = "";
+  // турбуленция: мека зона + вълнисти линии (леки — плавни и дълги, силни — гъсти и къси; планинските вълни — дълги)
+  let tbSoft = "", tbRib = "";
   P.forEach((p, i) => {
     for (const L of p.lay || []) {
-      if (L.lo >= yMax) continue;
-      const r = `x="${xa(i).toFixed(1)}" y="${Y(L.hi).toFixed(1)}" width="${(xb(i) - xa(i)).toFixed(1)}" height="${Math.max(1, Y(L.lo) - Y(L.hi)).toFixed(1)}"`;
-      if (L.turb) tb += `<rect ${r} fill="${TURB_COL[L.turb]}" fill-opacity="${[0, .3, .38, .45][L.turb]}"/>`;
-
+      if (L.lo >= yMax || !L.turb) continue;
+      const xA = xa(i), xB = xb(i), yH = Y(L.hi), yL = Y(L.lo);
+      tbSoft += `<rect x="${(xA - 1).toFixed(1)}" y="${yH.toFixed(1)}" width="${(xB - xA + 2).toFixed(1)}" height="${Math.max(2, yL - yH).toFixed(1)}" fill="${TURB_COL[L.turb]}" fill-opacity="${[0, .24, .3, .36][L.turb]}"/>`;
+      const sev = L.turb >= 3, wl = L.mtw ? 70 : sev ? 20 : 48, amp = sev ? 4.5 : 2.2, step = 11;
+      for (let yy = Math.ceil((yH + 5) / step) * step; yy <= yL - 5; yy += step) {
+        const ph = yy * 1.9, pts = [];
+        for (let x = xA; x <= xB + 0.1; x += 4) pts.push(`${x.toFixed(1)},${(yy + amp * Math.sin(x / wl * 6.283 + ph)).toFixed(1)}`);
+        tbRib += `<polyline points="${pts.join(" ")}" stroke-width="${sev ? 2 : 1.5}" stroke="${TURB_COL[L.turb]}" stroke-opacity="${sev ? .85 : .75}"/>`;
+      }
     }
   });
-  g += `<g clip-path="url(#c-sec)">${tb}${wsr}</g>`;
+  g += `<g clip-path="url(#c-sec)"><g filter="url(#f-soft)">${tbSoft}</g><g fill="none" stroke-linecap="round" stroke-linejoin="round">${tbRib}</g></g>`;
   // етикет „вълни“ над всеки участък с планински вълни
   ranges(P, p => p.mtw ? p.mtw.level : 0).forEach(r => {
     const pm = P.filter(p => p.s >= r[0] && p.s <= r[1] && p.mtw);
@@ -1433,7 +1483,7 @@ function drawChart(F) {
   // срез в ниския слой по пътя (без двата края): от земята на модела до 1600 ft над нея
   P.forEach((p, i) => {
     if (!i || i === P.length - 1 || !p.lls || !p.lls.level || !fin(p.lls0)) return;
-    g += `<rect x="${xa(i).toFixed(1)}" y="${Y(p.lls0 + 1600).toFixed(1)}" width="${(xb(i) - xa(i)).toFixed(1)}" height="${(Y(p.lls0) - Y(p.lls0 + 1600)).toFixed(1)}" fill="${p.lls.level === 2 ? TURB_COL[3] : TURB_COL[2]}" fill-opacity=".2"/>`;
+    g += `<rect x="${xa(i).toFixed(1)}" y="${Y(p.lls0 + 1600).toFixed(1)}" width="${(xb(i) - xa(i)).toFixed(1)}" height="${(Y(p.lls0) - Y(p.lls0 + 1600)).toFixed(1)}" fill="${p.lls.level === 2 ? TURB_COL[3] : TURB_COL[2]}" fill-opacity=".3" filter="url(#f-soft)"/>`;
   });
   // срез при излитане и кацане: зона под 2000 ft над летището, с етикет
   const LLc = [null, TURB_COL[2], TURB_COL[3]];
@@ -1443,10 +1493,10 @@ function drawChart(F) {
       [F.llws && F.llws.arr, place(S.to).elev ?? 0, Math.max(F.vp.sTod, F.total - 2000 / descR), F.total]]) {
     if (!L || !L.level) continue;
     const ft0 = elevM / 0.3048, xa0 = X(s0 * NM_KM), xb0 = X(s1 * NM_KM);
-    g += `<rect x="${xa0.toFixed(1)}" y="${Y(ft0 + 2000).toFixed(1)}" width="${Math.max(6, xb0 - xa0).toFixed(1)}" height="${(Y(ft0) - Y(ft0 + 2000)).toFixed(1)}" fill="${LLc[L.level]}" fill-opacity=".28" stroke="${LLc[L.level]}" stroke-dasharray="3 3"/>`;
+    g += `<rect x="${xa0.toFixed(1)}" y="${Y(ft0 + 2000).toFixed(1)}" width="${Math.max(6, xb0 - xa0).toFixed(1)}" height="${(Y(ft0) - Y(ft0 + 2000)).toFixed(1)}" fill="${LLc[L.level]}" fill-opacity=".5" filter="url(#f-soft)"/>`;
     const lab = L.level === 2 ? "LLWS" : t("wsShort");
-    const lx = Math.max(mL + 2, Math.min(Wd - mR - 60, (xa0 + xb0) / 2 - 30));
-    g += `<g transform="translate(${lx.toFixed(1)},${(Y(ft0 + 2000) - 20).toFixed(1)})"><rect width="60" height="17" rx="8.5" fill="#fff" stroke="${LLc[L.level]}" stroke-width="1.5"/><text x="30" y="12" text-anchor="middle" fill="${L.level === 2 ? "#6E160C" : "#7A3E00"}" font-weight="600">${lab} ${Math.round(L.level === 2 ? L.rate : L.dv)}</text></g>`;
+    const lx = Math.max(mL + 2, Math.min(Wd - mR - 80, (xa0 + xb0) / 2 - 40));
+    g += `<g transform="translate(${lx.toFixed(1)},${(Y(ft0 + 2000) - 20).toFixed(1)})"><rect width="80" height="17" rx="8.5" fill="#fff" stroke="${LLc[L.level]}" stroke-width="1.5"/><text x="40" y="12" text-anchor="middle" fill="${L.level === 2 ? "#6E160C" : "#7A3E00"}" font-weight="600">${lab} ${Math.round(L.level === 2 ? L.rate : L.dv)} kt</text></g>`;
   }
   g += bb;
   // TOC / TOD
@@ -1562,12 +1612,12 @@ function drawChart(F) {
   $("xs").innerHTML = `<div class="xs-box"><svg viewBox="0 0 ${Wd} ${Ht}" role="img" aria-label="${t("xsTitle")}">
     <style>svg text{font-feature-settings:"locl" 0 !important;font-variant-ligatures:none}.ax{font:11px 'IBM Plex Mono',monospace;fill:#6B7280}.lab{font:500 12px 'IBM Plex Sans',sans-serif;fill:#374151}.val{font:500 11.5px 'IBM Plex Mono',monospace}text{font-family:'IBM Plex Mono',monospace;font-size:11px}</style>
     ${defs}${g}${strip}${hover}</svg><div class="xs-tip" id="xs-tip" hidden></div></div>`;
-  $("xs-leg").innerHTML = (of > 1 ? `<span><i style="background:${C_CLOUD};opacity:.45;border-radius:6px"></i>${t("lgCloud2")}</span>`
-    + `<span><i style="background:${C_CLOUD};opacity:.22;border-radius:6px"></i>${t("lgCloud1")}</span>`
-    : `<span><i style="background:${C_CLOUD};opacity:.3;border-radius:6px"></i>${t("lgCloud")}</span>`)
+  $("xs-leg").innerHTML = (of > 1 ? `<span><i style="background:#fff;border:1px solid #9AA9BD;border-radius:6px"></i>${t("lgCloud2")}</span>`
+    + `<span><i style="background:#fff;border:1px solid #9AA9BD;opacity:.5;border-radius:6px"></i>${t("lgCloud1")}</span>`
+    : `<span><i style="background:#fff;border:1px solid #9AA9BD;border-radius:6px"></i>${t("lgCloud")}</span>`)
     + `<span><i style="background:${C_ICE};opacity:.45;height:8px"></i>${t("lgIce")}</span>`
     + `<span><i style="background:${TURB_COL[2]};opacity:.6"></i><i style="background:${TURB_COL[3]};opacity:.65"></i>${t("lgTurb")}</span>`
-    + `<span><i style="background:${TURB_COL[2]};opacity:.3;border:1px dashed ${TURB_COL[2]}"></i><i style="background:${TURB_COL[3]};opacity:.3;border:1px dashed ${TURB_COL[3]}"></i>${t("lgWs")}</span>`
+    + `<span><i style="background:${TURB_COL[2]};opacity:.35"></i><i style="background:${TURB_COL[3]};opacity:.4"></i>${t("lgWs")}</span>`
     + `<span><svg width="18" height="12" viewBox="0 0 18 12"><g stroke="#6B7280" stroke-width="1.2"><line x1="2" y1="6" x2="16" y2="6"/><line x1="16" y1="6" x2="13" y2="1"/></g></svg>${t("lgBarbs")}</span>`
     + `<span><i class="ln" style="border-top-color:${C_FZL};border-top-style:dashed"></i>${t("lgFzl")}</span>`
     + `<span><i class="ln" style="border-top-color:${SEV_COL[0]};border-top-width:3px"></i><i class="ln" style="border-top-color:${SEV_COL[1]};border-top-width:3px"></i><i class="ln" style="border-top-color:${SEV_COL[2]};border-top-width:3px"></i>${t("lgFlight")}</span>`
