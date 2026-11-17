@@ -36,10 +36,12 @@ jobs:
 
       # ICON: точките на всеки прогон (JSON, ~100 KB). Пази се последният кеш;
       # нов прогон се тегли само когато DWD го е пуснал, а за текущия — само новите стъпки.
-      - name: ICON кеш (възстановяване)
+      - name: ICON и ALADIN кеш (възстановяване)
         uses: actions/cache/restore@v4
         with:
-          path: cache/icon
+          path: |
+            cache/icon
+            cache/aladin
           key: icon-${{ github.run_id }}
           restore-keys: icon-
 
@@ -52,13 +54,19 @@ jobs:
       - name: HTML
         run: python render_html.py
 
-      - name: ICON кеш (чистене и запис)
+      # ALADIN също се пази: run-ът се тегли веднъж, а при изчакване от Open-Meteo
+      # fetch_aladin взема последния кеширан run (≤ 12 ч) вместо да отпадне от таблицата.
+      - name: ICON и ALADIN кеш (чистене и запис)
         if: always()
-        run: find cache/icon -name 'icon_*.json' -mtime +2 -delete || true
+        run: |
+          find cache/icon -name 'icon_*.json' -mtime +2 -delete || true
+          find cache/aladin -name 'aladin_*.json' -mtime +2 -delete || true
       - uses: actions/cache/save@v4
         if: always()
         with:
-          path: cache/icon
+          path: |
+            cache/icon
+            cache/aladin
           key: icon-${{ github.run_id }}
 
       - uses: actions/upload-pages-artifact@v3
@@ -121,7 +129,7 @@ jobs:
             b=$(basename "$f").gz
             gzip -n -c "$f" > "arch/icon/$b"     # прогонът се допълва с нови стъпки → презаписва се
           done
-          # ALADIN: веднъж на run (само архив, не влиза в таблицата)
+          # ALADIN: веднъж на run (вятър в таблицата + архив)
           mkdir -p arch/aladin
           for f in cache/aladin/aladin_*.json; do
             [ -f "$f" ] || continue
