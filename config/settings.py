@@ -174,7 +174,14 @@ CORRECTION = {
     "reset_window_h": 2, "reset_dir": 60, "reset_dir_min_kt": 6, "reset_kt": 10,
 }
 
-WIND = {"vrb_below_kt": 3, "gust_show_diff_kt": 10}
+WIND = {"vrb_below_kt": 3, "gust_show_diff_kt": 10,
+        # Конвективен порив от nowcasting-public (20.11.2026, опит — оценява се по архива):
+        # конвективно ехо ≥ dbz в 3/10 km в прогнозата на nowcast за времето на колоната (≤ lead_max_min)
+        # или мълнии в 16 km (за първите ltg_max_min) → порив ≥ max(min_kt, w850_frac × вятър на 850 hPa).
+        # w850_frac 0.7: LBSF 18.11 и 19→20.11 — METAR G22–33 при 850 hPa 36–48 kt (отношение ~0.7).
+        # Записва се "gust_src": "Н" в колоната.
+        "conv_gust": {"lead_max_min": 120, "dbz": 45, "ltg_r16": 1, "ltg_max_min": 30,
+                      "min_kt": 25, "w850_frac": 0.7, "match_min": 15, "show_above_kt": 5}}
 
 # Видимост
 VIS = {

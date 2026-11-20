@@ -80,8 +80,9 @@ def build(inp, icon, now, icaos):
         if ala and icao in ala.get("airports", {}):
             models["aladin"] = from_openmeteo(ala, icao)
         metars = _metars(inp.get("metar", {}).get(icao))
-        a = compute(icao, metars, models, now, S)
         nc = inp.get("nowcast")
+        nc_ap = (nc or {}).get("airports", {}).get(icao) if (nc and not nc.get("stale")) else None
+        a = compute(icao, metars, models, now, S, nowcast_ap=nc_ap)
         cols = [dt.datetime.fromisoformat(x["time"]) for x in a["cols"]]
         ph = phenomenon(metars, (nc or {}).get("airports", {}).get(icao), nc, models, cols, now, S)
         a["phenomenon_source"] = ph["source"]

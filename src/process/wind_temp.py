@@ -15,8 +15,13 @@ X(t) = средно от моделите + B_stat + E_METAR · exp(−t/τ)
   (G − S; без G — под 10 kt) и с τ_gust преминава към превишението на модела
   (претеглено средно на поривите от моделите − средният вятър). Показва се, когато е
   ≥ 10 kt над средния вятър (както в METAR).
+- Конвективен порив (опит, 20.11.2026): в първите 2 ч, при конвективно ехо ≥ 45 dBZ до 10 km
+  в прогнозата на nowcasting-public или мълнии в 16 km — поривът е поне 0.7 × вятъра на 850 hPa
+  (пренос на импулс), но ≥ 25 kt. Колоната получава "gust_src": "Н".
 - T/Td: същата корекция; Td ≤ T.
 """
+
+import datetime as dt
 
 import math
 
@@ -123,9 +128,37 @@ def _regime_reset(models, t0, cols, c):
     return None
 
 
-def compute(icao, metars, models, now, settings):
+def _conv_gust_fn(nowcast_ap, models, W, cfg, t_nc):
+    """Функция ts → (конвективен порив kt или None, причина). nowcast_ap — само ако не е стар."""
+    if not nowcast_ap or not cfg:
+        return lambda ts: (None, None)
+    leads = []
+    for L in nowcast_ap.get("leads", []):
+        if L.get("lead_min", 999) <= cfg["lead_max_min"]:
+            ts = dt.datetime.fromisoformat(L["valid"].replace("Z", "+00:00")).timestamp()
+            leads.append((ts, L))
+    r16 = ((nowcast_ap.get("lightning") or {}).get("r16") or 0)
+
+    def f(ts):
+        why = None
+        near = [L for t, L in leads if abs(t - ts) <= cfg["match_min"] * 60]
+        if any(L.get("convective") and max(L.get("dbz_max_3km") or 0, L.get("dbz_max_10km") or 0) >= cfg["dbz"]
+               for L in near):
+            why = "ехо"
+        elif r16 >= cfg["ltg_r16"] and t_nc is not None and ts - t_nc <= cfg["ltg_max_min"] * 60:
+            why = "мълнии"
+        if why is None:
+            return None, None
+        w850 = weighted({n: at(s, "w850", ts) for n, s in models.items() if "w850" in s}, W)
+        g = max(cfg["min_kt"], cfg["w850_frac"] * w850) if np.isfinite(w850) else cfg["min_kt"]
+        return g, why
+    return f
+
+
+def compute(icao, metars, models, now, settings, nowcast_ap=None):
     """metars: списък (най-новият първи) с parsed METAR и "time" (datetime).
-    models: {"icon"|"ifs"|"gfs": series}. Връща dict за таблицата."""
+    models: {"icon"|"ifs"|"gfs": series}. nowcast_ap: летището от nowcasting-public
+    (само ако не е стар) — за конвективния порив. Връща dict за таблицата."""
     W, c, wcfg = settings.WEIGHTS, settings.CORRECTION, settings.WIND
     tau = c["tau_h"]
     stale = (not metars or metars[0].get("time") is None
@@ -150,6 +183,9 @@ def compute(icao, metars, models, now, settings):
     e_mod0 = max(_g0 - _s0, 0.0) if (np.isfinite(_g0) and np.isfinite(_s0)) else 0.0
     if stale:
         e_metar, e_mod0 = None, 0.0
+
+    cg = wcfg.get("conv_gust")
+    conv = _conv_gust_fn(nowcast_ap, models, W["wind"], cg, now.timestamp())
 
     out = []
     for k, t in enumerate(cols):
@@ -202,6 +238,11 @@ def compute(icao, metars, models, now, settings):
         if gust is not None and spd_r is not None and gust - spd_r >= wcfg["gust_show_diff_kt"]:
             gust_r = int(round(gust))
         excess = (gust - spd_r) if (gust is not None and spd_r is not None) else None
+        gust_src = None
+        if k > 0 and spd_r is not None:
+            g_c, why = conv(ts)
+            if g_c is not None and g_c >= spd_r + cg["show_above_kt"] and (gust_r is None or g_c > gust_r):
+                gust_r, gust, gust_src = int(round(g_c)), float(g_c), f"Н:{why}"
 
         out.append({
             "time": t.isoformat(), "lead": lead_label(t0, t),
@@ -210,7 +251,7 @@ def compute(icao, metars, models, now, settings):
             "t": None if tt is None else round(tt), "td": None if td is None else round(td),
             "t_raw": None if tt is None else round(float(tt), 2),
             "td_raw": None if td is None else round(float(td), 2),
-            "src": src,
+            "src": src, "gust_src": gust_src,
         })
 
     # Хистерезис на поривите: ≥ 8 kt превишение се показва, ако и двата
