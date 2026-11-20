@@ -18,7 +18,7 @@ X(t) = средно от моделите + B_stat + E_METAR · exp(−t/τ)
 - Конвективен порив (опит, 20.11.2026): в първите 2 ч, при конвективно ехо ≥ 45 dBZ до 10 km
   в прогнозата на nowcasting-public или мълнии в 16 km — поривът е поне 0.7 × вятъра на 850 hPa
   (пренос на импулс), но ≥ 25 kt. Колоната получава "gust_src": "Н".
-- WS (срез): модели — векторна разлика 10 m → 850 hPa ≥ 20 kt (LBSF); METAR с WS — 3 ч;
+- WS (срез): модели — векторна разлика 10 m → 850 hPa ≥ 20 kt и 850 hPa ≥ 25 kt (LBSF); METAR с WS — 3 ч;
   конвекция по nowcast. Колоната получава "ws": [причини].
 - T/Td: същата корекция; Td ≤ T.
 """
@@ -158,20 +158,21 @@ def _conv_gust_fn(nowcast_ap, models, W, cfg, t_nc):
 
 
 def _ws_models(models, W, ts):
-    """Векторна разлика 10 m → 850 hPa (kt), претеглена по моделите, които имат 850 hPa."""
-    d = {}
+    """(векторна разлика 10 m → 850 hPa, скорост на 850 hPa) в kt, претеглени по моделите с 850 hPa."""
+    d, s850 = {}, {}
     for n, s in models.items():
         if "u850" not in s:
             continue
         x = math.hypot(at(s, "u850", ts) - at(s, "u", ts), at(s, "v850", ts) - at(s, "v", ts))
         if np.isfinite(x):
             d[n] = x
+            s850[n] = at(s, "w850", ts)
     if not d:
-        return float("nan")
+        return float("nan"), float("nan")
     w = {n: W.get(n, 0) for n in d}
     if sum(w.values()) <= 0:               # напр. само GFS (тегло 0) → равно средно
         w = {n: 1.0 for n in d}
-    return weighted(d, w)
+    return weighted(d, w), weighted(s850, w)
 
 
 def compute(icao, metars, models, now, settings, nowcast_ap=None):
@@ -264,8 +265,8 @@ def compute(icao, metars, models, now, settings, nowcast_ap=None):
             if ws_metar and h <= wsc["metar_hold_h"]:
                 ws.append("METAR")
             if k > 0 and icao in wsc["model_icao"]:
-                dv = _ws_models(models, W["wind"], ts)
-                if np.isfinite(dv) and dv >= wsc["diff_kt"]:
+                dv, s850 = _ws_models(models, W["wind"], ts)
+                if np.isfinite(dv) and dv >= wsc["diff_kt"] and s850 >= wsc["w850_min_kt"]:
                     ws.append(f"модели {int(round(dv))} kt")
             if k > 0 and conv(ts)[1]:
                 ws.append("nowcast " + conv(ts)[1])
