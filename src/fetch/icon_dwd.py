@@ -226,7 +226,10 @@ def fetch_icon(now, airports, cfg, horizon_h, cache_dir, cells_file):
         with open(out_path, encoding="utf-8") as f:
             cached = json.load(f)
         has_nb = all("nb" in a for a in cached.get("airports", {}).values())
-        if not (has_nb or not cfg.get("nb_fields")) or set(cached.get("airports", {})) != set(airports):
+        a0 = next(iter(cached.get("airports", {}).values()), {})
+        same_fields = all(str(l) in a0.get("pl", {}).get(f, {}) for f, levs in cfg["pressure_level"].items() for l in levs)
+        if (not (has_nb or not cfg.get("nb_fields")) or set(cached.get("airports", {})) != set(airports)
+                or not same_fields):            # нови полета/нива в настройките → тегли се наново
             cached = None                       # стар формат → тегли се наново
         elif not [s for s in steps if s not in cached["steps"]]:
             logger.info(f"ICON {run:%Y-%m-%d %H}Z от кеша")

@@ -84,7 +84,7 @@ OPEN_METEO = {
                 "categorical_freezing_rain",    # 0/1 — само в архива (флаг на модела за FZRA)
             ] + [f"{v}_{p}hPa" for p in (1000, 950, 925, 900, 850, 800, 700)
                  for v in ("temperature", "relative_humidity", "geopotential_height")]
-              + [f"wind_{v}_{p}hPa" for p in (925, 850) for v in ("speed", "direction")],
+              + [f"wind_{v}_{p}hPa" for p in (925, 900, 850) for v in ("speed", "direction")],   # 900 — за WS (20.11)
         },
     },
 }
@@ -111,7 +111,7 @@ ALADIN = {
         "precipitation", "rain", "snowfall", "showers", "cape", "weather_code",
     ] + [f"{v}_{p}hPa" for p in (1000, 950, 925, 850, 800, 700, 600)
          for v in ("temperature", "relative_humidity", "geopotential_height")]
-      + [f"wind_{v}_{p}hPa" for p in (925, 850, 700) for v in ("speed", "direction")],
+      + [f"wind_{v}_{p}hPa" for p in (925, 900, 850, 700) for v in ("speed", "direction")],   # 900 — за WS (20.11)
 }
 
 # ------------------------------------------------------------
@@ -138,8 +138,8 @@ ICON_DWD = {
         "t":      [1000, 950, 925, 900, 850, 800, 700, 600],
         "relhum": [1000, 950, 925, 900, 850, 800, 700, 600],
         "fi":     [1000, 950, 925, 900, 850, 800, 700, 600],
-        "u":      [925, 850, 700],     # 925/850 — за статистиката на вятъра
-        "v":      [925, 850, 700],
+        "u":      [925, 900, 850, 700],     # 925/850 — за статистиката на вятъра; 900 — за WS (~1550 ft над LBSF)
+        "v":      [925, 900, 850, 700],
     },
 }
 
