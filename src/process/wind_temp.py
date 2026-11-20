@@ -18,7 +18,8 @@ X(t) = средно от моделите + B_stat + E_METAR · exp(−t/τ)
 - Конвективен порив (опит, 20.11.2026): в първите 2 ч, при конвективно ехо ≥ 45 dBZ до 10 km
   в прогнозата на nowcasting-public или мълнии в 16 km — поривът е поне 0.7 × вятъра на 850 hPa
   (пренос на импулс), но ≥ 25 kt. Колоната получава "gust_src": "Н".
-- WS (срез): модели — векторна разлика 10 m → 850 hPa ≥ 20 kt и 850 hPa ≥ 25 kt (LBSF); METAR с WS — 3 ч;
+- WS (срез): модели — векторна разлика 10 m → 850 hPa ≥ 20 kt, 850 hPa ≥ 25 kt и вятър ≥ 5 kt (LBSF);
+  METAR с WS — 3 ч;
   конвекция по nowcast. Колоната получава "ws": [причини].
 - T/Td: същата корекция; Td ≤ T.
 """
@@ -266,7 +267,8 @@ def compute(icao, metars, models, now, settings, nowcast_ap=None):
                 ws.append("METAR")
             if k > 0 and icao in wsc["model_icao"]:
                 dv, s850 = _ws_models(models, W["wind"], ts)
-                if np.isfinite(dv) and dv >= wsc["diff_kt"] and s850 >= wsc["w850_min_kt"]:
+                if (np.isfinite(dv) and dv >= wsc["diff_kt"] and s850 >= wsc["w850_min_kt"]
+                        and spd_r is not None and spd_r >= wsc["sfc_min_kt"]):
                     ws.append(f"модели {int(round(dv))} kt")
             if k > 0 and conv(ts)[1]:
                 ws.append("nowcast " + conv(ts)[1])
