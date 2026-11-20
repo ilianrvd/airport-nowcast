@@ -18,6 +18,8 @@ X(t) = средно от моделите + B_stat + E_METAR · exp(−t/τ)
 - Конвективен порив (опит, 20.11.2026): в първите 2 ч, при конвективно ехо ≥ 45 dBZ до 10 km
   в прогнозата на nowcasting-public или мълнии в 16 km — поривът е поне 0.7 × вятъра на 850 hPa
   (пренос на импулс), но ≥ 25 kt. Колоната получава "gust_src": "Н".
+- WS (срез): модели — векторна разлика 10 m → 850 hPa ≥ 20 kt (LBSF); METAR с WS — 3 ч;
+  конвекция по nowcast. Колоната получава "ws": [причини].
 - T/Td: същата корекция; Td ≤ T.
 """
 
@@ -155,6 +157,23 @@ def _conv_gust_fn(nowcast_ap, models, W, cfg, t_nc):
     return f
 
 
+def _ws_models(models, W, ts):
+    """Векторна разлика 10 m → 850 hPa (kt), претеглена по моделите, които имат 850 hPa."""
+    d = {}
+    for n, s in models.items():
+        if "u850" not in s:
+            continue
+        x = math.hypot(at(s, "u850", ts) - at(s, "u", ts), at(s, "v850", ts) - at(s, "v", ts))
+        if np.isfinite(x):
+            d[n] = x
+    if not d:
+        return float("nan")
+    w = {n: W.get(n, 0) for n in d}
+    if sum(w.values()) <= 0:               # напр. само GFS (тегло 0) → равно средно
+        w = {n: 1.0 for n in d}
+    return weighted(d, w)
+
+
 def compute(icao, metars, models, now, settings, nowcast_ap=None):
     """metars: списък (най-новият първи) с parsed METAR и "time" (datetime).
     models: {"icon"|"ifs"|"gfs": series}. nowcast_ap: летището от nowcasting-public
@@ -186,6 +205,8 @@ def compute(icao, metars, models, now, settings, nowcast_ap=None):
 
     cg = wcfg.get("conv_gust")
     conv = _conv_gust_fn(nowcast_ap, models, W["wind"], cg, now.timestamp())
+    wsc = wcfg.get("ws") or {}
+    ws_metar = bool(m0 and " WS " in f" {m0.get('raw') or ''} ")
 
     out = []
     for k, t in enumerate(cols):
@@ -238,6 +259,16 @@ def compute(icao, metars, models, now, settings, nowcast_ap=None):
         if gust is not None and spd_r is not None and gust - spd_r >= wcfg["gust_show_diff_kt"]:
             gust_r = int(round(gust))
         excess = (gust - spd_r) if (gust is not None and spd_r is not None) else None
+        ws = []
+        if wsc:
+            if ws_metar and h <= wsc["metar_hold_h"]:
+                ws.append("METAR")
+            if k > 0 and icao in wsc["model_icao"]:
+                dv = _ws_models(models, W["wind"], ts)
+                if np.isfinite(dv) and dv >= wsc["diff_kt"]:
+                    ws.append(f"модели {int(round(dv))} kt")
+            if k > 0 and conv(ts)[1]:
+                ws.append("nowcast " + conv(ts)[1])
         gust_src = None
         if k > 0 and spd_r is not None:
             g_c, why = conv(ts)
@@ -251,7 +282,7 @@ def compute(icao, metars, models, now, settings, nowcast_ap=None):
             "t": None if tt is None else round(tt), "td": None if td is None else round(td),
             "t_raw": None if tt is None else round(float(tt), 2),
             "td_raw": None if td is None else round(float(td), 2),
-            "src": src, "gust_src": gust_src,
+            "src": src, "gust_src": gust_src, "ws": ws or None,
         })
 
     # Хистерезис на поривите: ≥ 8 kt превишение се показва, ако и двата
