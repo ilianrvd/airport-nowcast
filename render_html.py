@@ -69,7 +69,7 @@ def status(cols):
         if red:
             return "red"
         yel = (k_vis(c.get("vis_m")) == "warn" or k_cig(c.get("ceiling_ft")) == "warn"
-               or k_gust(c.get("gust_kt")) == "warn" or c.get("fog2000") == "ВИС"
+               or k_gust(c.get("gust_kt")) == "warn" or c.get("ws") or c.get("fog2000") == "ВИС"
                or c.get("cig1500") == "ВИС" or c.get("fog1000") == "УМЕР"
                or c.get("cig200") == "УМЕР" or c.get("icing") == "УМЕР"
                or (c.get("wx") and "SN" in c["wx"]))
@@ -82,7 +82,8 @@ def status(cols):
 def t_wind(c):
     if c.get("wind_kt") is None:
         return "—"
-    return f"VRB{c['wind_kt']:02d}" if c["wind_dir"] == "VRB" else f"{c['wind_dir']}/{c['wind_kt']:02d}"
+    w = f"VRB{c['wind_kt']:02d}" if c["wind_dir"] == "VRB" else f"{c['wind_dir']}/{c['wind_kt']:02d}"
+    return w + " WS" if c.get("ws") else w
 
 
 def t_vis(c):
@@ -107,7 +108,8 @@ def t_src(c, k):
 
 ROWS = [
     ("ВЯТЪР", [
-        ("Посока / скорост", "° / kt", t_wind, lambda c: "ok"),
+        ("Посока / скорост", "° / kt", t_wind, lambda c: "warn" if c.get("ws") else "ok",
+         lambda c: ("Срез на вятъра (WS): " + ", ".join(c["ws"])) if c.get("ws") else None),
         ("Пориви", "kt", lambda c: "—" if c.get("gust_kt") is None else str(c["gust_kt"]),
          lambda c: "none" if c.get("gust_kt") is None else k_gust(c["gust_kt"])),
     ]),

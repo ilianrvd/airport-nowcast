@@ -181,7 +181,15 @@ WIND = {"vrb_below_kt": 3, "gust_show_diff_kt": 10,
         # w850_frac 0.7: LBSF 18.11 и 19→20.11 — METAR G22–33 при 850 hPa 36–48 kt (отношение ~0.7).
         # Записва се "gust_src": "Н" в колоната.
         "conv_gust": {"lead_max_min": 120, "dbz": 45, "ltg_r16": 1, "ltg_max_min": 30,
-                      "min_kt": 25, "w850_frac": 0.7, "match_min": 15, "show_above_kt": 5}}
+                      "min_kt": 25, "w850_frac": 0.7, "match_min": 15, "show_above_kt": 5},
+        # Предупреждение за срез на вятъра (WS) — 20.11.2026:
+        # • модели: векторна разлика 10 m → 850 hPa ≥ diff_kt (среднопретеглено по моделите с 850 hPa;
+        #   само за летищата в model_icao — за останалите 850 hPa е твърде високо над терена).
+        #   LBSF, ALADIN 0–9 ч, 01–20.11: при „WS ALL RWY“ в METAR медиана 30 kt, без WS 13 kt;
+        #   ≥ 20 kt хваща 26 от 30 часа с WS (103 часа сигнал без WS в METAR).
+        # • METAR с WS → задържа се metar_hold_h;
+        # • конвекция по nowcast (същото условие като конвективния порив).
+        "ws": {"diff_kt": 20, "model_icao": ["LBSF"], "metar_hold_h": 3}}
 
 # Видимост
 VIS = {

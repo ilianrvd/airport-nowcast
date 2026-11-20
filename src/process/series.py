@@ -86,9 +86,12 @@ def from_icon(icon: dict, icao: str) -> dict:
             prof[int(lev)] = (_arr(pl["fi"][lev]) / 9.80665,
                               _arr(pl["t"][lev]) - 273.15,
                               _arr(pl["relhum"][lev]))
-    w850 = (np.hypot(_arr(pl["u"]["850"]), _arr(pl["v"]["850"])) * KT
-            if "850" in pl.get("u", {}) and "850" in pl.get("v", {}) else np.full(len(t), np.nan))
-    return {"t": np.array(t), "u": u, "v": v, "spd": np.hypot(u, v), "w850": w850,
+    if "850" in pl.get("u", {}) and "850" in pl.get("v", {}):
+        u850, v850 = _arr(pl["u"]["850"]) * KT, _arr(pl["v"]["850"]) * KT
+    else:
+        u850 = v850 = np.full(len(t), np.nan)
+    return {"t": np.array(t), "u": u, "v": v, "spd": np.hypot(u, v),
+            "w850": np.hypot(u850, v850), "u850": u850, "v850": v850,
             "gust": _arr(a["vmax_10m"]) * KT,
             "t2m": _arr(a["t_2m"]) - 273.15, "td2m": _arr(a["td_2m"]) - 273.15,
             "precip": tot, "precip_conv": conv, "precip_snow": snow,
@@ -128,8 +131,9 @@ def from_openmeteo(om: dict, icao: str) -> dict:
         ks = (f"geopotential_height_{p}hPa", f"temperature_{p}hPa", f"relative_humidity_{p}hPa")
         if all(a.get(k) is not None for k in ks):
             prof[p] = tuple(_arr(a[k]) for k in ks)
+    s850, d850 = g("wind_speed_850hPa"), g("wind_direction_850hPa")
     return {"t": np.array(t), "u": u, "v": v, "spd": spd, "gust": g("wind_gusts_10m"),
-            "w850": g("wind_speed_850hPa"),
+            "w850": s850, "u850": -s850 * np.sin(np.radians(d850)), "v850": -s850 * np.cos(np.radians(d850)),
             "t2m": g("temperature_2m"), "td2m": g("dew_point_2m"),
             "precip": g("precipitation"), "ww": g("weather_code"), "profile": prof,
             "vis": g("visibility"), "clcl": g("cloud_cover_low")}
