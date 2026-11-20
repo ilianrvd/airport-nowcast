@@ -86,7 +86,9 @@ def from_icon(icon: dict, icao: str) -> dict:
             prof[int(lev)] = (_arr(pl["fi"][lev]) / 9.80665,
                               _arr(pl["t"][lev]) - 273.15,
                               _arr(pl["relhum"][lev]))
-    return {"t": np.array(t), "u": u, "v": v, "spd": np.hypot(u, v),
+    w850 = (np.hypot(_arr(pl["u"]["850"]), _arr(pl["v"]["850"])) * KT
+            if "850" in pl.get("u", {}) and "850" in pl.get("v", {}) else np.full(len(t), np.nan))
+    return {"t": np.array(t), "u": u, "v": v, "spd": np.hypot(u, v), "w850": w850,
             "gust": _arr(a["vmax_10m"]) * KT,
             "t2m": _arr(a["t_2m"]) - 273.15, "td2m": _arr(a["td_2m"]) - 273.15,
             "precip": tot, "precip_conv": conv, "precip_snow": snow,
@@ -127,6 +129,7 @@ def from_openmeteo(om: dict, icao: str) -> dict:
         if all(a.get(k) is not None for k in ks):
             prof[p] = tuple(_arr(a[k]) for k in ks)
     return {"t": np.array(t), "u": u, "v": v, "spd": spd, "gust": g("wind_gusts_10m"),
+            "w850": g("wind_speed_850hPa"),
             "t2m": g("temperature_2m"), "td2m": g("dew_point_2m"),
             "precip": g("precipitation"), "ww": g("weather_code"), "profile": prof,
             "vis": g("visibility"), "clcl": g("cloud_cover_low")}
