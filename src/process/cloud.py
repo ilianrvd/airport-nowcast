@@ -34,7 +34,7 @@ def _metar_low_cover(m, high_ft, pct):
     if m.get("vv_ft") is not None:
         return 100.0
     vals = [pct[c["cover"]] for c in m.get("clouds", [])
-            if c.get("base_ft") is not None and c["base_ft"] < high_ft]
+            if c.get("cover") in pct and c.get("base_ft") is not None and c["base_ft"] < high_ft]
     return float(max(vals)) if vals else 0.0
 
 
@@ -151,6 +151,9 @@ def compute(cols, metars, models, nowcast_ap, settings):
             c["ceiling_txt"] = str(int(round(ceil / 100.0) * 100))
         c["ceiling_ft"] = None if ceil is None else int(round(ceil / 100.0) * 100)
         c["low_cloud"] = amt
+        # съгласуваност: TS в колоната → CB (21.11: TS от METAR без CB, CB идва чак с екстраполацията)
+        if cb != "CB" and "TS" in (c.get("wx") or ""):
+            cb = "CB"
         c["cb_tcu"] = cb
         c["cloud_src"] = src
 

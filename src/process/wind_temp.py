@@ -18,6 +18,8 @@ X(t) = средно от моделите + B_stat + E_METAR · exp(−t/τ)
 - Конвективен порив (опит, 20.11.2026): в първите 2 ч, при конвективно ехо ≥ 45 dBZ до 10 km
   в прогнозата на nowcasting-public или мълнии в 16 km — поривът е поне 0.7 × вятъра на 850 hPa
   (пренос на импулс), но ≥ 25 kt. Колоната получава "gust_src": "Н".
+- Обръщане по пистата: ако компонентата по пистата на моделите е с обратен знак спрямо METAR,
+  корекцията на посоката се маха от тази колона нататък (21.11.2026).
 - WS (срез): модели — векторна разлика 10 m → 850 hPa ≥ 20 kt, 850 hPa ≥ 25 kt и вятър ≥ 5 kt (LBSF);
   METAR с WS — 3 ч;
   конвекция по nowcast. Колоната получава "ws": [причини].
@@ -210,6 +212,16 @@ def compute(icao, metars, models, now, settings, nowcast_ap=None):
     wsc = wcfg.get("ws") or {}
     ws_metar = bool(m0 and " WS " in f" {m0.get('raw') or ''} ")
 
+    # компонента по пистата от METAR (за правилото за обръщане)
+    rwy = settings.AIRPORTS.get(icao, {}).get("rwy")
+    fl = c.get("dir_flip")
+    c_obs = None
+    if fl and rwy is not None and m0 and isinstance(m0.get("wind_dir"), (int, float)) and m0.get("wind_kt"):
+        c_obs = m0["wind_kt"] * math.cos(math.radians(m0["wind_dir"] - rwy))
+        if abs(c_obs) < fl["min_kt"]:
+            c_obs = None
+    flipped = False
+
     out = []
     for k, t in enumerate(cols):
         ts = t.timestamp()
@@ -234,7 +246,11 @@ def compute(icao, metars, models, now, settings, nowcast_ap=None):
         else:
             spd = s_mod + (err["ds"] * f_w if np.isfinite(err["ds"]) else 0.0)
             spd = max(spd, 0.0) if np.isfinite(spd) else None
-            dirn = ((d_mod + (err["dd"] * f_w if np.isfinite(err["dd"]) else 0.0)) % 360
+            if c_obs is not None and not flipped and np.isfinite(d_mod) and np.isfinite(s_mod):
+                c_mod = s_mod * math.cos(math.radians(d_mod - rwy))
+                flipped = abs(c_mod) >= fl["min_kt"] and c_mod * c_obs < 0
+            f_dir = 0.0 if flipped else f_w
+            dirn = ((d_mod + (err["dd"] * f_dir if np.isfinite(err["dd"]) else 0.0)) % 360
                     if np.isfinite(d_mod) else None)
             gust = None
             if np.isfinite(g_mod) and np.isfinite(s_mod) and spd is not None:
