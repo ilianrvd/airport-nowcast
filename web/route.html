@@ -193,11 +193,11 @@ footer{grid-column:1/-1;font-size:12px;color:var(--mut);line-height:1.6}
 // Летища (същите като в config/settings.py)
 // ---------------------------------------------------------------
 const AIRPORTS = {
-  LBSF: {bg: "София",        en: "Sofia",          lat: 42.6952, lon: 23.4064, elev: 531},
-  LBBG: {bg: "Бургас",       en: "Burgas",         lat: 42.5696, lon: 27.5152, elev: 41},
-  LBWN: {bg: "Варна",        en: "Varna",          lat: 43.2321, lon: 27.8251, elev: 70},
-  LBPD: {bg: "Пловдив",      en: "Plovdiv",        lat: 42.0678, lon: 24.8508, elev: 182},
-  LBGO: {bg: "Г. Оряховица", en: "G. Oryahovitsa", lat: 43.1514, lon: 25.7129, elev: 87},
+  LBSF: {bg: "София",        en: "Sofia",          lat: 42.6952, lon: 23.4064, elev: 531, rwy: 88},
+  LBBG: {bg: "Бургас",       en: "Burgas",         lat: 42.5696, lon: 27.5152, elev: 41, rwy: 43},
+  LBWN: {bg: "Варна",        en: "Varna",          lat: 43.2321, lon: 27.8251, elev: 70, rwy: 89},
+  LBPD: {bg: "Пловдив",      en: "Plovdiv",        lat: 42.0678, lon: 24.8508, elev: 182, rwy: 118},
+  LBGO: {bg: "Г. Оряховица", en: "G. Oryahovitsa", lat: 43.1514, lon: 25.7129, elev: 87, rwy: 91},
 };
 /* AIRFIELDS:BEGIN */
 const AIRFIELDS = [   // [код, име БГ, име EN, lat, lon, височина m, най-известно]
@@ -310,7 +310,7 @@ const AF_BY = Object.fromEntries(AIRFIELDS.map(f => [f[0], f]));
 // Място по идентификатор: главно летище, площадка от списъка или "lat,lon"
 const ELEV = {};   // височини на точки от картата (Elevation API), m
 function place(id) {
-  if (AIRPORTS[id]) { const a = AIRPORTS[id]; return {id, main: true, code: id, short: id, name: a[S.lang], lat: a.lat, lon: a.lon, elev: a.elev}; }
+  if (AIRPORTS[id]) { const a = AIRPORTS[id]; return {id, main: true, code: id, short: id, name: a[S.lang], lat: a.lat, lon: a.lon, elev: a.elev, rwy: a.rwy}; }
   const f = AF_BY[id];
   if (f) return {id, main: false, code: f[0], short: /^LB[A-Z]{2}$/.test(f[0]) ? f[0] : (f[S.lang === "bg" && f[1] ? 1 : 2]).slice(0, 12),
                  name: S.lang === "bg" && f[1] ? f[1] : f[2], lat: f[3], lon: f[4], elev: f[5] ?? ELEV[id] ?? null};
@@ -874,7 +874,8 @@ async function computeFlight() {
       if (cv) p.lay.push({lo: col[0].z / 0.3048, hi: CONV_TOP, turb: cv, S: 0, Ri: NaN, src: "conv", cape: m.cape, shw: m.shw});
     }
     // срез в ниския слой (до 1600 / 2000 ft над земята) по целия маршрут
-    p.lls = col && data.icon ? llwsAt(data.icon[i], col, ts) : null;
+    const rwy = i === 0 ? place(S.from).rwy : i === F.path.length - 1 ? place(S.to).rwy : NaN;   // писта само при летищата
+    p.lls = col && data.icon ? llwsAt(data.icon[i], col, ts, rwy) : null;
     p.lls0 = col ? col[0].z / 0.3048 : NaN;
     const here = p.lay.filter(L => p.alt >= L.lo && p.alt <= L.hi);
     p.el.turb = Math.max(0, ...here.map(L => L.turb));
@@ -1073,13 +1074,14 @@ function atAltZ(col, z) {
 // ---------------------------------------------------------------
 // Срез на вятъра при излитане и кацане (под 2000 ft над земята)
 // ---------------------------------------------------------------
-//   „срез“:  векторна разлика спрямо вятъра на 10 m ≥ 15 kt до 1600 ft (500 m) —
-//            практиката за линията на снижаване; векторната разлика е горна граница
-//            за промяната на насрещния вятър при всяка писта;
+//   „срез“:  промяна на насрещния/попътния вятър спрямо 10 m ≥ 15 kt до 1600 ft (500 m) —
+//            по ICAO (Annex 3, Doc 9817). При летище с известна писта (rwy) — компонентата
+//            по пистата (21.11.2026; векторната разлика даваше срез твърде лесно);
+//            без писта (площадки, точки по пътя) — векторната разлика като горна граница;
 //   „LLWS“:  ≥ 10 kt на 100 ft в слой над 200 ft под 2000 ft (критерий на FAA/NWS).
 // Профил: вятър на 10, 80, 120, 180 m (ICON през Open-Meteo) + нивата по налягане.
 const LLWS_DV = 15, LLWS_TOP = 500, LLWS_RATE = 10, LLWS_MIN_DZ = 61, LLWS_MAX = 610;
-function llwsAt(d, col, ts) {
+function llwsAt(d, col, ts, rwy) {
   const prof = [];
   const add = (z, sp, dr) => { if (fin(sp) && fin(dr)) { const [u, v] = uv(sp, dr); prof.push({z, u, v}); } };
   if (d) for (const h of [10, 80, 120, 180]) add(h, tAt(d, `wind_speed_${h}m`, ts), tAt(d, `wind_direction_${h}m`, ts));
@@ -1098,7 +1100,9 @@ function llwsAt(d, col, ts) {
     if (z >= a.z && z <= b.z) { const f = (z - a.z) / (b.z - a.z); return {u: a.u + f * (b.u - a.u), v: a.v + f * (b.v - a.v)}; } } return null; };
   const b0 = prof[0];
   let dv = 0;
-  for (const q of [...prof.filter(x => x.z <= LLWS_TOP), at(LLWS_TOP)].filter(Boolean)) dv = Math.max(dv, Math.hypot(q.u - b0.u, q.v - b0.v));
+  const rs = fin(rwy) ? [Math.sin(rwy * Math.PI / 180), Math.cos(rwy * Math.PI / 180)] : null;
+  const dvOf = q => rs ? Math.abs((q.u - b0.u) * rs[0] + (q.v - b0.v) * rs[1]) : Math.hypot(q.u - b0.u, q.v - b0.v);
+  for (const q of [...prof.filter(x => x.z <= LLWS_TOP), at(LLWS_TOP)].filter(Boolean)) dv = Math.max(dv, dvOf(q));
   let rate = 0, layer = null;
   for (let i = 0; i < prof.length; i++) for (let j = i + 1; j < prof.length; j++) {
     const a = prof[i], b = prof[j], dz = b.z - a.z;
