@@ -31,7 +31,8 @@ _RVR = re.compile(r"^R\d{2}[LCR]?/")
 _WX = re.compile(
     r"^(\+|-|VC)?(MI|BC|PR|DR|BL|SH|TS|FZ)?"
     r"((?:DZ|RA|SN|SG|PL|GR|GS|UP|BR|FG|FU|VA|DU|SA|HZ|PO|SQ|FC|SS|DS)*)$")
-_CLOUD = re.compile(r"^(FEW|SCT|BKN|OVC)(\d{3}|///)(CB|TCU|///)?$")
+# AUTO METAR може да даде „//////CB“ (количество и височина неизвестни, CB от радара) — пази се типът
+_CLOUD = re.compile(r"^(FEW|SCT|BKN|OVC|///)(\d{3}|///)(CB|TCU|///)?$")
 _VV = re.compile(r"^VV(\d{3}|///)$")
 _TEMP = re.compile(r"^(M?\d{2}|//)/(M?\d{2}|//)$")
 _QNH = re.compile(r"^Q(\d{4})$")
@@ -97,8 +98,10 @@ def parse_metar(raw: str) -> dict:
             out["nsc"] = True
         elif (m := _CLOUD.match(tok)):
             cover, base, typ = m.groups()
+            if cover == "///" and typ in (None, "///"):
+                continue                         # „//////“ без тип — нищо полезно
             out["clouds"].append({
-                "cover": cover,
+                "cover": None if cover == "///" else cover,
                 "base_ft": None if base == "///" else int(base) * 100,
                 "type": None if typ in (None, "///") else typ,
             })
