@@ -228,6 +228,26 @@ def compute(icao, cols, metars, models, fog_ap, fog_ok, settings, ifs_nb=None):
     falling = bool(m0 and m1 and m0.get("vis_m") and m1.get("vis_m") and m0["vis_m"] < m1["vis_m"])
     metar_fg = bool(v_m is not None and v_m < 1000)
 
+    # --- предпазители срещу грешка на модела за мъгла (FOG_GUARD)
+    G = getattr(settings, "FOG_GUARD", None)
+    fog_off = None                       # причина: моделът е извън следата спрямо METAR
+    if G and in_domain and m0 and m0.get("temp_c") is not None and m0.get("dew_c") is not None:
+        f0 = _fog_lookup(fog_ap, t0, 0.0)
+        if f0 and f0.get("t2m") is not None and f0.get("td2m") is not None:
+            dT = f0["t2m"] - m0["temp_c"]
+            dDD = (f0["t2m"] - f0["td2m"]) - (m0["temp_c"] - m0["dew_c"])
+            if dT <= -G["t_cold_k"] or dDD <= -G["dd_low_k"]:
+                fog_off = f"модел T {f0['t2m']:.1f}/{f0['td2m']:.1f} срещу METAR {m0['temp_c']}/{m0['dew_c']}"
+    clear_hold = bool(G and in_domain and v_m is not None and v_m >= G["clear_m"])
+
+    def fog_blocked(h, nb_pct=None):
+        """True → моделът за мъгла не участва в тази колона."""
+        if fog_off:
+            return True
+        if clear_hold and h <= G["hold_h"]:
+            return not (nb_pct is not None and nb_pct >= G["support_nb"])
+        return False
+
     for k, c in enumerate(cols):
         ts = dt.datetime.fromisoformat(c["time"]).timestamp()
         h = (ts - t0) / 3600
@@ -245,6 +265,9 @@ def compute(icao, cols, metars, models, fog_ap, fog_ok, settings, ifs_nb=None):
                 src = "К" if abs(E * math.exp(-h / cfg["tau_h"])) > 0.05 else "N"
                 w = 0.0
                 fr = _fog_lookup(fog_ap, ts, shift) if in_domain else None
+                if fr and fog_blocked(h, None if mask is None else 100.0 * _nb_fraction(
+                        ic, ifs_s, mask, ts, 1000, cfg, w=wts(h), ceiling_ref=settings.CEILING_REF)):
+                    fr = None
                 if fr and fr.get("vis_m") is not None and onset is not None and not metar_fg \
                         and fr.get("regime") != "DYNAMIC":
                     ramp = (ts - (onset - spread * 3600)) / (2 * spread * 3600)
@@ -283,7 +306,11 @@ def compute(icao, cols, metars, models, fog_ap, fog_ok, settings, ifs_nb=None):
                     fr = _fog_lookup(fog_ap, ts + d * 3600, shift)
                     if fr and fr.get("vis_m") is not None and fr["vis_m"] < thr and fr.get("regime") != "DYNAMIC":
                         sig = True
-                if sig:
+                if sig and fog_off:
+                    cand["мъгла"] = min(G["p_offtrack"], P["fog_2000"] if thr == 2000 else P["fog_1000"])
+                elif sig and fog_blocked(h, cand.get("околност")):
+                    pass
+                elif sig:
                     p = P["fog_2000"] if thr == 2000 else P["fog_1000"]
                     if flags.get("cf_collapse"):
                         p *= P["cf_collapse_factor"]
@@ -312,6 +339,7 @@ def compute(icao, cols, metars, models, fog_ap, fog_ok, settings, ifs_nb=None):
 
     _consistency(cols)
     return {"fog_in_domain": in_domain, "fog_note": fog_note,
+            "fog_offtrack": fog_off, "fog_clear_hold": clear_hold,
             "nb_points": int(mask.sum()) if mask is not None else 0,
             "contra": sorted(contra)}
 
