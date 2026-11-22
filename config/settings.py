@@ -291,3 +291,8 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 # Фиксирани клетки на ICON (i = индекс по ширина, j = по дължина).
 # Попълва се от choose_icon_cells.py; празно → най-близката клетка.
 ICON_CELLS_FILE = os.path.join(BASE_DIR, "config", "icon_cells.json")
+
+
+# SYNOP от планински станции — само архив (22.11.2026): пориви/WS/фьон в LBSF и проектът за вятъра
+SYNOP = {"url": "https://www.ogimet.com/cgi-bin/getsynop", "stations": ["15613"],   # 15613 — Черни връх (2290 m)
+         "hours": 3, "timeout": 20}

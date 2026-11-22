@@ -9,7 +9,7 @@ METAR (AWC) → IFS и GFS (Open-Meteo) → ICON-EU (DWD, кеш по run).
            python run_fetch.py --no-icon    (без ICON, бърз тест)
 """
 
-import os, sys, json, gzip, argparse, logging
+import os, sys, json, gzip, argparse, logging, time
 import datetime as dt
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -17,11 +17,12 @@ from config.settings import (AIRPORTS, ICAO_LIST, HORIZON_H, METAR, OPEN_METEO, 
                              ICON_DWD, ICON_CELLS_FILE, CACHE_DIR, ARCHIVE_DIR, ALADIN)
 from src.fetch.nowcast import fetch_airports_json
 from src.fetch.fog import fetch_fog_json
-from config.settings import FOG
+from config.settings import FOG, SYNOP
 from src.fetch.metar import fetch_metars, is_stale
 from src.fetch.openmeteo import fetch_model, nb_coords, fetch_neighbourhood
 from src.fetch.icon_dwd import fetch_icon
 from src.fetch.aladin import fetch_aladin
+from src.fetch.synop import fetch_synop
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s",
                     datefmt="%H:%M:%S")
@@ -63,16 +64,31 @@ def main():
         inputs["errors"]["fog"] = str(e)
 
     for key, cfg in OPEN_METEO["models"].items():
-        try:
-            inputs[key] = fetch_model(key, cfg, AIRPORTS, OPEN_METEO, CACHE_DIR)
-        except Exception as e:
-            log.error(f"{key}: {e}")
-            inputs["errors"][key] = str(e)
+        for attempt in (1, 2):                  # Open-Meteo понякога изтича по време — един повторен опит
+            try:
+                inputs[key] = fetch_model(key, cfg, AIRPORTS, OPEN_METEO, CACHE_DIR)
+                inputs["errors"].pop(key, None)
+                break
+            except Exception as e:
+                log.error(f"{key} (опит {attempt}): {e}")
+                inputs["errors"][key] = str(e)
+                if attempt == 1:
+                    time.sleep(5)
 
     # IFS в точките на околността (същите като клетките на ICON)
     try:
         coords = nb_coords(AIRPORTS, ICON_CELLS_FILE, ICON_DWD["grid"], ICON_DWD["nb_radius"])
-        inputs["ifs_nb"] = fetch_neighbourhood("ecmwf_ifs", coords, ["visibility"], OPEN_METEO)
+        for attempt in (1, 2):
+            try:
+                inputs["ifs_nb"] = fetch_neighbourhood("ecmwf_ifs", coords, ["visibility"], OPEN_METEO,
+                                                       timeout=90 if attempt == 1 else 60)
+                inputs["errors"].pop("ifs_nb", None)
+                break
+            except Exception as e:
+                log.error(f"IFS околност (опит {attempt}): {e}")
+                inputs["errors"]["ifs_nb"] = str(e)
+                if attempt == 1:
+                    time.sleep(5)
     except Exception as e:
         log.error(f"IFS околност: {e}")
         inputs["errors"]["ifs_nb"] = str(e)
@@ -84,6 +100,13 @@ def main():
     except Exception as e:
         log.error(f"ALADIN: {e}")
         inputs["errors"]["aladin"] = str(e)
+
+    # SYNOP Черни връх — само архив
+    try:
+        inputs["synop"] = fetch_synop(SYNOP, now)
+    except Exception as e:
+        log.error(f"SYNOP: {e}")
+        inputs["errors"]["synop"] = str(e)
 
     if not args.no_icon:
         try:

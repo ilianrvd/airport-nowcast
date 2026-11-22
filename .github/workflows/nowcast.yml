@@ -134,7 +134,7 @@ jobs:
           for f in cache/aladin/aladin_*.json; do
             [ -f "$f" ] || continue
             b=$(basename "$f").gz
-            [ -f "arch/aladin/$b" ] || gzip -c "$f" > "arch/aladin/$b"
+            gzip -n -c "$f" > "arch/aladin/$b"     # околността може да се допълни по-късно → презаписва се
           done
           cd arch
           git config user.name  "airport-nowcast bot"

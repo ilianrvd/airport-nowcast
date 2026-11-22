@@ -68,6 +68,18 @@ def _fetch_aladin(now, airports, cfg, om, cache_dir):
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, f"aladin_{run:%Y%m%d%H}.json")
     if os.path.exists(path):
+        # околността не е изтеглена при първия опит (изтекло време) → нов опит, без да пипаме основното
+        with open(path, encoding="utf-8") as f:
+            res = json.load(f)
+        if res.get("nb") is None and cfg.get("nb"):
+            try:
+                res["nb"] = _fetch_nb(airports, cfg, om)
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(res, f, ensure_ascii=False)
+                logger.info("ALADIN: околността е допълнена")
+                return path, run.isoformat(), True
+            except Exception as e:
+                logger.warning(f"ALADIN околност (повторно): {e}")
         return path, run.isoformat(), False
 
     icaos = list(airports)
