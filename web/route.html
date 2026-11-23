@@ -324,7 +324,7 @@ const coordId = c => `${r4(c[0])},${r4(c[1])}`;
 const TR = {а:"a",б:"b",в:"v",г:"g",д:"d",е:"e",ж:"zh",з:"z",и:"i",й:"y",к:"k",л:"l",м:"m",н:"n",о:"o",п:"p",р:"r",с:"s",т:"t",у:"u",ф:"f",х:"h",ц:"ts",ч:"ch",ш:"sh",щ:"sht",ъ:"a",ь:"y",ю:"yu",я:"ya"};
 const norm = x => (x || "").toLowerCase().replace(/[а-я]/g, ch => TR[ch] ?? ch).replace(/[^a-z0-9]/g, "");
 
-const HORIZON_H = 3;           // излитане до 3 ч напред
+const HORIZON_H = 24;          // излитане до 24 ч напред (след ~12 ч летищата са само от ICON-EU, без таблицата)
 const DEF = {from: "LBSF", to: "LBWN", tas: 100, fl: 65};
 const LIM = {tas: [40, 250], fl: [10, 195]};
 
@@ -1244,8 +1244,10 @@ function endBlock(T, icao, ts, lab) {
 }
 function drawEnds(F, T) {
   const pd = place(S.from), pa = place(S.to);
-  const d = pd.main ? endBlock(T, S.from, S.etd.getTime(), t("dep")) : modelEndBlock(pd, F.path[0], S.etd.getTime(), t("dep"));
-  const a = pa.main ? endBlock(T, S.to, F.eta.getTime(), t("arr")) : modelEndBlock(pa, F.path[F.path.length - 1], F.eta.getTime(), t("arr"));
+  // Петте летища — от таблицата; извън хоризонта ѝ (12 ч) или без таблица — от ICON в точката
+  const end = (pl, icao, pt, ts, lab) => pl.main && tableCol(T, icao, ts) ? endBlock(T, icao, ts, lab) : modelEndBlock(pl, pt, ts, lab);
+  const d = end(pd, S.from, F.path[0], S.etd.getTime(), t("dep"));
+  const a = end(pa, S.to, F.path[F.path.length - 1], F.eta.getTime(), t("arr"));
   let note = "";
   if (T && T.created) {
     const age = (Date.now() - Date.parse(T.created)) / 60000;
