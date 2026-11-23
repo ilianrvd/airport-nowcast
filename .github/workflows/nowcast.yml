@@ -136,6 +136,12 @@ jobs:
             b=$(basename "$f").gz
             gzip -n -c "$f" > "arch/aladin/$b"     # околността може да се допълни по-късно → презаписва се
           done
+          # MultiConvect: веднъж на рън (само архив; gzip -n → без празни commit-и при същото съдържание)
+          mkdir -p arch/multiconvect
+          for f in cache/multiconvect/mc_*.json; do
+            [ -f "$f" ] || continue
+            gzip -n -c "$f" > "arch/multiconvect/$(basename "$f").gz"
+          done
           cd arch
           git config user.name  "airport-nowcast bot"
           git config user.email "actions@users.noreply.github.com"
