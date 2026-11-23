@@ -17,12 +17,13 @@ from config.settings import (AIRPORTS, ICAO_LIST, HORIZON_H, METAR, OPEN_METEO, 
                              ICON_DWD, ICON_CELLS_FILE, CACHE_DIR, ARCHIVE_DIR, ALADIN)
 from src.fetch.nowcast import fetch_airports_json
 from src.fetch.fog import fetch_fog_json
-from config.settings import FOG, SYNOP
+from config.settings import FOG, SYNOP, MULTICONVECT
 from src.fetch.metar import fetch_metars, is_stale
 from src.fetch.openmeteo import fetch_model, nb_coords, fetch_neighbourhood
 from src.fetch.icon_dwd import fetch_icon
 from src.fetch.aladin import fetch_aladin
 from src.fetch.synop import fetch_synop
+from src.fetch.multiconvect import fetch_multiconvect
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s",
                     datefmt="%H:%M:%S")
@@ -100,6 +101,13 @@ def main():
     except Exception as e:
         log.error(f"ALADIN: {e}")
         inputs["errors"]["aladin"] = str(e)
+
+    # MultiConvect — само архив (веднъж на рън в arch/multiconvect)
+    try:
+        inputs["multiconvect"] = fetch_multiconvect(MULTICONVECT, CACHE_DIR, now)
+    except Exception as e:
+        log.error(f"MultiConvect: {e}")
+        inputs["errors"]["multiconvect"] = str(e)
 
     # SYNOP Черни връх — само архив
     try:

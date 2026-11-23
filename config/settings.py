@@ -296,3 +296,7 @@ ICON_CELLS_FILE = os.path.join(BASE_DIR, "config", "icon_cells.json")
 # SYNOP от планински станции — само архив (22.11.2026): пориви/WS/фьон в LBSF и проектът за вятъра
 SYNOP = {"url": "https://www.ogimet.com/cgi-bin/getsynop", "stations": ["15613"],   # 15613 — Черни връх (2290 m)
          "hours": 3, "timeout": 20}
+
+# MultiConvect (отделен проект) — категории за конвекция около летищата, 0–48 h; само архив (23.11.2026)
+MULTICONVECT = {"url": "https://ilianrvd.github.io/multiconvect/airports.json", "timeout": 20,
+                "max_age_h": 12}   # рън на 6 ч + ~5 ч закъснение
