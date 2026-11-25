@@ -60,9 +60,10 @@ def _compose(intensity, shower, ts, vcts):
 
 def sat_guard(metars, nowcast_ap, now, settings):
     """Предпазител за сателита (H40B; решение на Илиан 25.11.2026).
-    METAR без валеж и без BKN/OVC под low_ft (и без VV) → цялото влияние на H40B се маха
-    (валеж, видимост от него, CB/TCU и порив от ехото), докато METAR не покаже валеж или
-    ниска облачност. Мълниите остават. При радар (radar_ro, radar_iabg) — нищо не се маха.
+    METAR без валеж, без BKN/OVC под low_ft (и без VV) и без CB/TCU → слабото ехо на H40B
+    се маха (валеж, видимост от него, CB/TCU и порив): под keep_rate mm/h и не конвективно
+    ≥ keep_conv_dbz в 10 km. H40B надценява тънката средна облачност като валежна; силното
+    ехо и CB остават. Мълниите остават. При радар (radar_ro, radar_iabg) — нищо не се маха.
     Връща (nowcast_ap за ползване, причина или None)."""
     sg = settings.PHENOMENON.get("sat_guard")
     if not sg or not nowcast_ap or nowcast_ap.get("source") not in sg["sources"]:
@@ -73,12 +74,26 @@ def sat_guard(metars, nowcast_ap, now, settings):
         return nowcast_ap, None
     if _metar_precip(m0) or m0.get("vv_ft") is not None or any(
             cl.get("cover") in ("BKN", "OVC") and cl.get("base_ft") is not None and cl["base_ft"] < sg["low_ft"]
-            for cl in m0.get("clouds", [])):
+            for cl in m0.get("clouds", [])) or any(cl.get("type") for cl in m0.get("clouds", [])):
         return nowcast_ap, None
     zero = {"dbz_max_3km": 0.0, "dbz_max_10km": 0.0, "rate_mmh_3km": 0.0, "convective": False}
+
+    def strong(L):
+        return (L.get("rate_mmh_3km") or 0) >= sg["keep_rate"] or \
+            (L.get("convective") and (L.get("dbz_max_10km") or 0) >= sg["keep_conv_dbz"])
+    leads, n = [], 0
+    for L in nowcast_ap.get("leads", []):
+        if strong(L):
+            leads.append(L)
+        else:
+            n += 1 if ((L.get("rate_mmh_3km") or 0) > 0 or (L.get("dbz_max_10km") or 0) > 0) else 0
+            leads.append({**L, **{k: v for k, v in zero.items() if k in L}})
     ap = dict(nowcast_ap)
-    ap["leads"] = [{**L, **{k: v for k, v in zero.items() if k in L}} for L in nowcast_ap.get("leads", [])]
-    return ap, f"{nowcast_ap['source']}: METAR без валеж и без BKN/OVC < {sg['low_ft']} ft — сателитът не се ползва"
+    ap["leads"] = leads
+    why = (f"{nowcast_ap['source']}: METAR без валеж и без BKN/OVC < {sg['low_ft']} ft — "
+           f"слабото ехо (< {sg['keep_rate']} mm/h, не конв. ≥ {sg['keep_conv_dbz']} dBZ) не се ползва"
+           + (f" ({n} срока)" if n else ""))
+    return ap, why
 
 
 def compute(metars, nowcast_ap, nc_meta, models, cols, now, settings):
