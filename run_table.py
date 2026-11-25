@@ -86,6 +86,7 @@ def build(inp, icon, now, icaos):
         cols = [dt.datetime.fromisoformat(x["time"]) for x in a["cols"]]
         ph = phenomenon(metars, (nc or {}).get("airports", {}).get(icao), nc, models, cols, now, S)
         a["phenomenon_source"] = ph["source"]
+        a["sat_block"] = ph.get("sat_block")
         for col, p in zip(a["cols"], ph["cols"]):
             col["wx"], col["wx_src"], col["rate"] = p["wx"], p["src"], p["rate"]
         phase_cols(models, a["cols"], metars, S.AIRPORTS[icao]["elev_m"])
