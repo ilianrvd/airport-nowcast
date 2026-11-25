@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config.settings as S
 from src.process.series import from_icon, from_openmeteo
 from src.process.wind_temp import compute
-from src.process.phenomenon import compute as phenomenon
+from src.process.phenomenon import compute as phenomenon, sat_guard
 from src.process.phase_cols import compute as phase_cols, apply_phase_to_wx
 from src.process.visibility import compute as visibility
 from src.process.cloud import compute as cloud
@@ -82,11 +82,12 @@ def build(inp, icon, now, icaos):
         metars = _metars(inp.get("metar", {}).get(icao))
         nc = inp.get("nowcast")
         nc_ap = (nc or {}).get("airports", {}).get(icao) if (nc and not nc.get("stale")) else None
+        nc_ap, sat_block = sat_guard(metars, nc_ap, now, S)
         a = compute(icao, metars, models, now, S, nowcast_ap=nc_ap)
         cols = [dt.datetime.fromisoformat(x["time"]) for x in a["cols"]]
-        ph = phenomenon(metars, (nc or {}).get("airports", {}).get(icao), nc, models, cols, now, S)
+        ph = phenomenon(metars, nc_ap, nc, models, cols, now, S)
         a["phenomenon_source"] = ph["source"]
-        a["sat_block"] = ph.get("sat_block")
+        a["sat_block"] = sat_block
         for col, p in zip(a["cols"], ph["cols"]):
             col["wx"], col["wx_src"], col["rate"] = p["wx"], p["src"], p["rate"]
         phase_cols(models, a["cols"], metars, S.AIRPORTS[icao]["elev_m"])
@@ -98,8 +99,7 @@ def build(inp, icon, now, icaos):
         fog_ok = bool(fog and not fog.get("stale") and fog_ap and "error" not in fog_ap)
         a["vis_info"] = visibility(icao, a["cols"], metars, models, fog_ap, fog_ok, S,
                                    ifs_nb=inp.get("ifs_nb"))
-        cloud(a["cols"], metars, models,
-              (nc or {}).get("airports", {}).get(icao) if (nc and not nc.get("stale")) else None, S)
+        cloud(a["cols"], metars, models, nc_ap, S)
         a["fog_model"] = None if not fog_ok else {
             "init": fog.get("init"), "summary": fog_ap.get("summary"), "flags": fog_ap.get("flags")}
         res["airports"][icao] = a
