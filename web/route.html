@@ -367,7 +367,7 @@ const T = {
     endHigh: "висок", endNoTable: "Летищната таблица не е достъпна", endOut: "извън хоризонта на таблицата (12 ч)",
     endStale: "таблицата е от", endLink: "Летищна таблица →", endCol: "срок",
     loading: "Сваляне на данните…", sec: "с", limit: "лимитът на Open-Meteo за минута е изчерпан — опитай пак след минута", failed: "Данните не можаха да се свалят",
-    runInfo: "Изчислено", noModel: "няма данни",
+    runInfo: "Изчислено", noModel: "няма данни", fallback: "ICON-EU недостъпен — ползван е ICON (seamless)",
     thS: "km", thT: "UTC", thPh: "фаза", thAlt: "ft", thTer: "терен ft", thTerC: "терен ±10 km",
     thAgl: "над терена ±10 km", thRHmax: "max RH в колоната (hPa)", ice: "лед", thComp: "попътен kt", thDrift: "снос", thFzl: "0 °C ft",
     thCloud: "в облак", thIce: "обледяване", thVisLev: "вид. ниво m", thVisSfc: "вид. земя m (мин)",
@@ -421,7 +421,7 @@ const T = {
     endHigh: "high", endNoTable: "The airport table is not available", endOut: "outside the table horizon (12 h)",
     endStale: "table from", endLink: "Airport table →", endCol: "column",
     loading: "Downloading data…", sec: "s", limit: "Open-Meteo per-minute limit reached — try again in a minute", failed: "Could not download the data",
-    runInfo: "Calculated", noModel: "no data",
+    runInfo: "Calculated", noModel: "no data", fallback: "ICON-EU unavailable — ICON (seamless) used",
     thS: "km", thT: "UTC", thPh: "phase", thAlt: "ft", thTer: "terrain ft", thTerC: "terrain ±10 km",
     thAgl: "above terrain ±10 km", thRHmax: "max RH in column (hPa)", ice: "ice", thComp: "tailwind kt", thDrift: "drift", thFzl: "0 °C ft",
     thCloud: "in cloud", thIce: "icing", thVisLev: "vis level m", thVisSfc: "sfc vis m (min)",
@@ -646,7 +646,14 @@ const isoHour = ms => new Date(Math.floor(ms / 3600000) * 3600000).toISOString()
 const cache = new Map();
 async function getJson(url) {
   if (cache.has(url)) return cache.get(url);
-  const r = await fetch(url);
+  // Грешка на сървъра (5xx) или прекъсната връзка — още 2 опита през 2 и 4 s
+  let r = null;
+  for (let k = 0; ; k++) {
+    try { r = await fetch(url); } catch (e) { if (k >= 2) throw e; r = null; }
+    if (r && r.status < 500) break;
+    if (k >= 2) break;
+    await new Promise(res => setTimeout(res, 2000 * (k + 1)));
+  }
   if (r.status === 429) throw new Error(t("limit"));
   if (!r.ok) throw new Error(`${r.status} ${(await r.text()).slice(0, 160)}`);
   const j = await r.json();
@@ -664,11 +671,22 @@ function flightLevels() {
   const k = LEVELS.findIndex(l => l < p);
   return k === -1 ? LEVELS : LEVELS.slice(0, k + 1);
 }
+// ICON-EU дава 5xx (напр. докато Open-Meteo качва нов прогон) → резерва icon_seamless
+let MODEL_FALLBACK = false;
 async function fetchModel(key, pts, t0, t1, only = null) {
+  const m = MODEL_FALLBACK ? "icon_seamless" : MODELS[key];
+  try { return await fetchModelAs(m, pts, t0, t1, only); }
+  catch (e) {
+    if (m === "icon_seamless" || !/^5\d\d\b/.test(e.message)) throw e;
+    MODEL_FALLBACK = true;
+    return fetchModelAs("icon_seamless", pts, t0, t1, only);
+  }
+}
+async function fetchModelAs(model, pts, t0, t1, only) {
   const q = new URLSearchParams({
     latitude: pts.map(p => p.lat.toFixed(4)).join(","),
     longitude: pts.map(p => p.lon.toFixed(4)).join(","),
-    models: MODELS[key],
+    models: model,
     hourly: (only || [...SFC_VARS, ...flightLevels().flatMap(l => PL_VARS.map(v => `${v}_${l}hPa`))]).join(","),
     start_hour: isoHour(t0), end_hour: isoHour(t1 + 3600000),
     wind_speed_unit: "kn", timezone: "GMT", timeformat: "unixtime", cell_selection: "nearest",
@@ -803,6 +821,7 @@ async function computeFlight() {
   // Релеф на 10 km на север, изток, юг и запад от всяка точка — за ориентацията на билата (планински вълни)
   const sten = pts.flatMap(p => [0, 90, 180, 270].map(a => destPoint([p.lat, p.lon], a, MTW_STENCIL_KM)));
   const stenP = fetchElevation(sten).catch(() => null);
+  MODEL_FALLBACK = false;
   const res = await Promise.allSettled([...keys.map(k => fetchModel(k, pts, t0, t1)), fetchTerrain(pts),
                                         ...keys.map(k => fetchModel(k, side, t0, t1, ["visibility"]))]);
   const stenE = await stenP;
@@ -1789,7 +1808,7 @@ async function calculate() {
     const errs = Object.entries(F.errors).map(([k, e]) => `${k.toUpperCase()}: ${t("noModel")} (${e})`);
     const min = (F.eta - S.etd) / 60000;
     $("status").textContent = `${t("runInfo")} ${hhmmUtc(new Date())} UTC · ${t("time")} ${hmm(min)} · ETA ${hhmmUtc(F.eta)} UTC`
-      + (errs.length ? ` · ${errs.join(" · ")}` : "");
+      + (MODEL_FALLBACK ? ` · ${t("fallback")}` : "") + (errs.length ? ` · ${errs.join(" · ")}` : "");
     drawData(F);
     drawResults(F, drawEnds(F, T));
     drawSummary(true, F);
