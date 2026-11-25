@@ -10,10 +10,7 @@
 - Извън nowcast-а (след +6 ч, или файлът липсва/стар): от моделите —
   валеж за часа (ICON + IFS + GFS, тегла като за вятъра), SH при дял на
   конвективния валеж в ICON > 0.5, TS при ww/weather_code 95–99.
-- Предпазител за сателита (H40B, 25.11.2026): METAR без валеж и без BKN/OVC под
-  5000 ft, а H40B вече дава валеж над летището в срока 0 → сателитът греши тук
-  (студена/заснежена земя, инверсия); валежът от него не влиза, докато METAR не
-  го потвърди. Мълниите (TS/VCTS) остават.
+- Предпазител за сателита: виж sat_guard() по-долу.
 Типът засега е RA; фазата (SN, RASN, FZRA, FZDZ) идва в следващата стъпка.
 Резултат по колона: {"wx": "-SHRA" | None, "src": "M" | "Н" | "N", "rate": mm/h}
 """
@@ -61,6 +58,29 @@ def _compose(intensity, shower, ts, vcts):
     return g + (" VCTS" if vcts and not ts else "")
 
 
+def sat_guard(metars, nowcast_ap, now, settings):
+    """Предпазител за сателита (H40B; решение на Илиан 25.11.2026).
+    METAR без валеж и без BKN/OVC под low_ft (и без VV) → цялото влияние на H40B се маха
+    (валеж, видимост от него, CB/TCU и порив от ехото), докато METAR не покаже валеж или
+    ниска облачност. Мълниите остават. При радар (radar_ro, radar_iabg) — нищо не се маха.
+    Връща (nowcast_ap за ползване, причина или None)."""
+    sg = settings.PHENOMENON.get("sat_guard")
+    if not sg or not nowcast_ap or nowcast_ap.get("source") not in sg["sources"]:
+        return nowcast_ap, None
+    m0 = metars[0] if metars else None
+    if m0 is None or m0.get("time") is None or \
+            (now - m0["time"]).total_seconds() > settings.METAR["stale_min"] * 60:
+        return nowcast_ap, None
+    if _metar_precip(m0) or m0.get("vv_ft") is not None or any(
+            cl.get("cover") in ("BKN", "OVC") and cl.get("base_ft") is not None and cl["base_ft"] < sg["low_ft"]
+            for cl in m0.get("clouds", [])):
+        return nowcast_ap, None
+    zero = {"dbz_max_3km": 0.0, "dbz_max_10km": 0.0, "rate_mmh_3km": 0.0, "convective": False}
+    ap = dict(nowcast_ap)
+    ap["leads"] = [{**L, **{k: v for k, v in zero.items() if k in L}} for L in nowcast_ap.get("leads", [])]
+    return ap, f"{nowcast_ap['source']}: METAR без валеж и без BKN/OVC < {sg['low_ft']} ft — сателитът не се ползва"
+
+
 def compute(metars, nowcast_ap, nc_meta, models, cols, now, settings):
     c = settings.PHENOMENON
     W = settings.WEIGHTS["wx"]
@@ -80,16 +100,6 @@ def compute(metars, nowcast_ap, nc_meta, models, cols, now, settings):
     is_radar = source in c["radar_sources"]
     ltg = (nowcast_ap or {}).get("lightning", {}) or {}
 
-    sg = c.get("sat_guard")
-    sat_block = None
-    if sg and leads and source in sg["sources"] and m_ok and not m_precip:
-        low = m0.get("vv_ft") is not None or any(
-            cl.get("cover") in ("BKN", "OVC") and cl.get("base_ft") is not None and cl["base_ft"] < sg["low_ft"]
-            for cl in m0.get("clouds", []))
-        r0 = next((L.get("rate_mmh_3km") for L in leads if L["lead_min"] == 0), None)
-        if not low and r0 is not None and r0 >= c["rain_min"]:
-            sat_block = f"{source}: {r0:.2f} mm/h над летището, METAR без валеж и без BKN/OVC < {sg['low_ft']} ft"
-
     out = []
     for k, t in enumerate(cols):
         ts = t.timestamp()
@@ -107,7 +117,7 @@ def compute(metars, nowcast_ap, nc_meta, models, cols, now, settings):
         if L is not None:
             rate = L.get("rate_mmh_3km")
             rate = float("nan") if rate is None else float(rate)
-            inten = None if sat_block else _intensity(rate, c)
+            inten = _intensity(rate, c)
             early = L["lead_min"] <= c["ts_max_lead_min"]
             ts_here = early and (ltg.get("r8") or 0) > 0
             vcts = early and not ts_here and (ltg.get("r16") or 0) > 0
@@ -137,4 +147,4 @@ def compute(metars, nowcast_ap, nc_meta, models, cols, now, settings):
         ts_here = sum(1 for w in ww if np.isfinite(w) and int(w) in c["ts_ww"]) >= 2
         out.append({"wx": _compose(inten, shower, ts_here, False), "src": "N",
                     "rate": None if not np.isfinite(rate) else round(rate, 2)})
-    return {"source": source if leads else None, "cols": out, "sat_block": sat_block}
+    return {"source": source if leads else None, "cols": out}
