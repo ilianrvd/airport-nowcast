@@ -10,6 +10,10 @@
 - Извън nowcast-а (след +6 ч, или файлът липсва/стар): от моделите —
   валеж за часа (ICON + IFS + GFS, тегла като за вятъра), SH при дял на
   конвективния валеж в ICON > 0.5, TS при ww/weather_code 95–99.
+- Предпазител за сателита (H40B, 25.11.2026): METAR без валеж и без BKN/OVC под
+  5000 ft, а H40B вече дава валеж над летището в срока 0 → сателитът греши тук
+  (студена/заснежена земя, инверсия); валежът от него не влиза, докато METAR не
+  го потвърди. Мълниите (TS/VCTS) остават.
 Типът засега е RA; фазата (SN, RASN, FZRA, FZDZ) идва в следващата стъпка.
 Резултат по колона: {"wx": "-SHRA" | None, "src": "M" | "Н" | "N", "rate": mm/h}
 """
@@ -76,6 +80,16 @@ def compute(metars, nowcast_ap, nc_meta, models, cols, now, settings):
     is_radar = source in c["radar_sources"]
     ltg = (nowcast_ap or {}).get("lightning", {}) or {}
 
+    sg = c.get("sat_guard")
+    sat_block = None
+    if sg and leads and source in sg["sources"] and m_ok and not m_precip:
+        low = m0.get("vv_ft") is not None or any(
+            cl.get("cover") in ("BKN", "OVC") and cl.get("base_ft") is not None and cl["base_ft"] < sg["low_ft"]
+            for cl in m0.get("clouds", []))
+        r0 = next((L.get("rate_mmh_3km") for L in leads if L["lead_min"] == 0), None)
+        if not low and r0 is not None and r0 >= c["rain_min"]:
+            sat_block = f"{source}: {r0:.2f} mm/h над летището, METAR без валеж и без BKN/OVC < {sg['low_ft']} ft"
+
     out = []
     for k, t in enumerate(cols):
         ts = t.timestamp()
@@ -93,7 +107,7 @@ def compute(metars, nowcast_ap, nc_meta, models, cols, now, settings):
         if L is not None:
             rate = L.get("rate_mmh_3km")
             rate = float("nan") if rate is None else float(rate)
-            inten = _intensity(rate, c)
+            inten = None if sat_block else _intensity(rate, c)
             early = L["lead_min"] <= c["ts_max_lead_min"]
             ts_here = early and (ltg.get("r8") or 0) > 0
             vcts = early and not ts_here and (ltg.get("r16") or 0) > 0
@@ -123,4 +137,4 @@ def compute(metars, nowcast_ap, nc_meta, models, cols, now, settings):
         ts_here = sum(1 for w in ww if np.isfinite(w) and int(w) in c["ts_ww"]) >= 2
         out.append({"wx": _compose(inten, shower, ts_here, False), "src": "N",
                     "rate": None if not np.isfinite(rate) else round(rate, 2)})
-    return {"source": source if leads else None, "cols": out}
+    return {"source": source if leads else None, "cols": out, "sat_block": sat_block}
