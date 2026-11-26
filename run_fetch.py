@@ -122,7 +122,8 @@ def main():
         try:
             path, icon = fetch_icon(now, AIRPORTS, ICON_DWD, HORIZON_H, CACHE_DIR, ICON_CELLS_FILE)
             inputs["icon"] = {"file": os.path.relpath(path, CACHE_DIR), "run": icon["run"],
-                              "failed_files": icon.get("failed_files", 0)}
+                              "failed_files": icon.get("failed_files", 0),
+                              "cache_fallback": bool(icon.get("cache_fallback"))}
         except Exception as e:
             log.error(f"ICON: {e}")
             inputs["errors"]["icon"] = str(e)

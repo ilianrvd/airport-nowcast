@@ -125,6 +125,7 @@ ICON_DWD = {
     "base_url": "https://opendata.dwd.de/weather/nwp/icon-eu/grib",
     "run_every_h": 3,
     "max_lag_runs": 4,       # колко стари run-а да пробва
+    "cache_fallback_h": 9,   # няма нов пълен run в DWD (или листингът не се чете) → последният от кеша, до 9 ч
     "workers": 8,            # паралелни сваляния
     "single_level": [
         "u_10m", "v_10m", "vmax_10m", "t_2m", "td_2m", "vis", "ww",
@@ -286,7 +287,8 @@ PHENOMENON = {
     # METAR без валеж и без BKN/OVC < 5000 ft → цялото влияние на H40B се маха (валеж, видимост,
     # CB/TCU и порив от ехото); мълниите остават; радарът не се пипа (решение 25.11.2026)
     # Праг (25.11): маха се само слабото ехо; ≥ keep_rate mm/h или конвективно ≥ keep_conv_dbz остава (CB)
-    "sat_guard": {"sources": ["h40b"], "low_ft": 5000, "keep_rate": 2.5, "keep_conv_dbz": 35},
+    # 26.11: keep_rate 2.5 → 1.5 (LBPD: H40B 1.8–2.1 mm/h при RA в тренда); TEMPO/BECMG с валеж/TS → без предпазител
+    "sat_guard": {"sources": ["h40b"], "low_ft": 5000, "keep_rate": 1.5, "keep_conv_dbz": 35},
 }
 
 # Статична поправка по летище и час (B_stat). Празно до калибрирането.
