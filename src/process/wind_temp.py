@@ -319,6 +319,7 @@ def compute(icao, metars, models, now, settings, nowcast_ap=None):
     return {
         "icao": icao, "t0": t0.isoformat(), "stale_metar": stale,
         "metar_raw": m0["raw"] if m0 else None,
+        "metar_source": (m0.get("src") or "awc") if m0 else None,   # стари входни данни без src → AWC
         "models": sorted(models), "reset_at": reset_at.isoformat() if reset_at else None,
         "correction": {k: (None if isinstance(v, float) and not np.isfinite(v) else
                            (round(v, 1) if isinstance(v, float) else v)) for k, v in err.items()},

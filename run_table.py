@@ -112,7 +112,7 @@ def print_table(a):
     print(f"\n{a['icao']}  t0 {a['t0'][11:16]}Z  модели: {', '.join(a['models'])}"
           f"{'  СТАР METAR' if a['stale_metar'] else ''}")
     if a["metar_raw"]:
-        print(f"  {a['metar_raw']}")
+        print(f"  {a['metar_raw']}" + (f"  [METAR от {a['metar_source']}]" if a.get("metar_source") != "awc" else ""))
     c = a["correction"]
     print(f"  корекция: ΔS {c['ds']} kt, Δθ {c['dd']}°, ΔT {c['dt']}, ΔTd {c['dtd']}  "
           f"(METAR-и: {c['n_metar']})" + (f"  нулиране от {a['reset_at'][11:16]}Z" if a["reset_at"] else ""))
