@@ -83,7 +83,7 @@ def sat_guard(metars, nowcast_ap, now, settings):
             (L.get("convective") and (L.get("dbz_max_10km") or 0) >= sg["keep_conv_dbz"])
     leads, n = [], 0
     for L in nowcast_ap.get("leads", []):
-        if strong(L):
+        if strong(L) or (L.get("rate_mmh_3km") is None and L.get("dbz_max_3km") is None):
             leads.append(L)
         else:
             n += 1 if ((L.get("rate_mmh_3km") or 0) > 0 or (L.get("dbz_max_10km") or 0) > 0) else 0
@@ -109,6 +109,8 @@ def compute(metars, nowcast_ap, nc_meta, models, cols, now, settings):
     if nowcast_ap and nc_meta and not nc_meta.get("stale"):
         source = nowcast_ap.get("source")
         for L in nowcast_ap.get("leads", []):
+            if L.get("rate_mmh_3km") is None and L.get("dbz_max_3km") is None:
+                continue                # срок без данни (извън хоризонта на nowcast) → моделите
             L = dict(L)
             L["_ts"] = dt.datetime.fromisoformat(L["valid"].replace("Z", "+00:00")).timestamp()
             leads.append(L)
