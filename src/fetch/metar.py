@@ -14,6 +14,7 @@ METAR от AWC Data API + собствен парсер на суровия те
   cb_tcu (str | None), temp_c, dew_c, qnh_hpa
   missing (списък групи с ////)
   src ("awc" | "nowcasting-public") — откъде е съобщението
+  trend_wx (списък групи за явления в TEMPO/BECMG; NOSIG → [])
 
 Резерва (26.11.2026): ако след двата опита към AWC за някое летище няма METAR или най-новият
 е по-стар от late_min, се четат съобщенията от nowcasting-public (obs/metar_latest.json, също
@@ -58,7 +59,7 @@ def parse_metar(raw: str) -> dict:
         "wind_dir": None, "wind_kt": None, "gust_kt": None, "wind_var": None,
         "vis_m": None, "cavok": False, "wx": [], "clouds": [], "vv_ft": None,
         "nsc": False, "temp_c": None, "dew_c": None, "qnh_hpa": None,
-        "missing": [],
+        "missing": [], "trend_wx": [],
     }
     i = 0
     if toks and toks[0] in ("METAR", "SPECI"):
@@ -70,9 +71,17 @@ def parse_metar(raw: str) -> dict:
     if i < len(toks) and re.match(r"^\d{6}Z$", toks[i]):
         i += 1
 
+    trend = False
     for tok in toks[i:]:
-        if tok in _STOP:
+        if tok == "RMK":
             break
+        if tok in _STOP:
+            trend = True                         # TEMPO/BECMG/NOSIG: само явленията в тренда
+            continue
+        if trend:
+            if (m := _WX.match(tok)) and m.group(3) or tok in ("TS", "VCTS", "VCSH", "-TS", "+TS"):
+                out["trend_wx"].append(tok)
+            continue
         if tok == "AUTO":
             out["auto"] = True
         elif tok == "COR":

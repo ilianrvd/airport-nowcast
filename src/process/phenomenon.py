@@ -60,7 +60,8 @@ def _compose(intensity, shower, ts, vcts):
 
 def sat_guard(metars, nowcast_ap, now, settings):
     """Предпазител за сателита (H40B; решение на Илиан 25.11.2026).
-    METAR без валеж, без BKN/OVC под low_ft (и без VV) и без CB/TCU → слабото ехо на H40B
+    METAR без валеж (и без валеж/TS в TEMPO/BECMG на тренда), без BKN/OVC под low_ft (и без VV)
+    и без CB/TCU → слабото ехо на H40B
     се маха (валеж, видимост от него, CB/TCU и порив): под keep_rate mm/h и не конвективно
     ≥ keep_conv_dbz в 10 km. H40B надценява тънката средна облачност като валежна; силното
     ехо и CB остават. Мълниите остават. При радар (radar_ro, radar_iabg) — нищо не се маха.
@@ -72,7 +73,9 @@ def sat_guard(metars, nowcast_ap, now, settings):
     if m0 is None or m0.get("time") is None or \
             (now - m0["time"]).total_seconds() > settings.METAR["stale_min"] * 60:
         return nowcast_ap, None
-    if _metar_precip(m0) or m0.get("vv_ft") is not None or any(
+    trend_precip = any(any(x in w for x in ("RA", "SN", "DZ", "PL", "GR", "GS", "SH", "TS"))
+                       for w in m0.get("trend_wx") or [])
+    if _metar_precip(m0) or trend_precip or m0.get("vv_ft") is not None or any(
             cl.get("cover") in ("BKN", "OVC") and cl.get("base_ft") is not None and cl["base_ft"] < sg["low_ft"]
             for cl in m0.get("clouds", [])) or any(cl.get("type") for cl in m0.get("clouds", [])):
         return nowcast_ap, None

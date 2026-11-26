@@ -214,11 +214,36 @@ def _extend(cached, run, steps, cfg, out_path):
     return cached
 
 
+def _cache_fallback(now, cfg, cache_dir):
+    """Последният прогон в кеша, ако не е по-стар от cache_fallback_h (26.11: листингът на DWD
+    не се прочете в 12:12Z → таблицата остана само с IFS, а кешът имаше 06Z)."""
+    max_h = cfg.get("cache_fallback_h", 0)
+    d = os.path.join(cache_dir, "icon")
+    best = None
+    for fn in os.listdir(d) if os.path.isdir(d) else []:
+        mm = re.match(r"^icon_(\d{10})\.json$", fn)
+        if not mm:
+            continue
+        run = dt.datetime.strptime(mm.group(1), "%Y%m%d%H").replace(tzinfo=dt.timezone.utc)
+        if (now - run).total_seconds() <= max_h * 3600 and (best is None or run > best[0]):
+            best = (run, os.path.join(d, fn))
+    if not best:
+        return None
+    with open(best[1], encoding="utf-8") as f:
+        cached = json.load(f)
+    cached["cache_fallback"] = True
+    logger.warning(f"ICON: няма нов пълен run в DWD — ползвам {best[0]:%Y-%m-%d %H}Z от кеша")
+    return best[1], cached
+
+
 def fetch_icon(now, airports, cfg, horizon_h, cache_dir, cells_file):
     """Връща (път до JSON, dict). Ако run-ът вече е в кеша — само го чете."""
     os.makedirs(os.path.join(cache_dir, "icon"), exist_ok=True)
     run, steps = find_run(now, cfg, horizon_h)
     if run is None:
+        fb = _cache_fallback(now, cfg, cache_dir)
+        if fb:
+            return fb
         raise RuntimeError("ICON-EU: няма пълен run в последните run-ове")
     out_path = os.path.join(cache_dir, "icon", f"icon_{run:%Y%m%d%H}.json")
     cached = None
