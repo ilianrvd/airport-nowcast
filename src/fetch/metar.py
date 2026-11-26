@@ -13,6 +13,11 @@ METAR от AWC Data API + собствен парсер на суровия те
   ceiling_ft (най-ниският BKN/OVC или VV; None = няма под 5000 ft / няма данни)
   cb_tcu (str | None), temp_c, dew_c, qnh_hpa
   missing (списък групи с ////)
+  src ("awc" | "nowcasting-public") — откъде е съобщението
+
+Резерва (26.11.2026): ако след двата опита към AWC за някое летище няма METAR или най-новият
+е по-стар от late_min, се четат съобщенията от nowcasting-public (obs/metar_latest.json, също
+от AWC). Ползват се само raw и time, през същия парсер; взимат се само ако са по-нови.
 """
 
 import re
@@ -135,15 +140,21 @@ def parse_metar(raw: str) -> dict:
     return out
 
 
-def fetch_metars(icaos, url, hours=3, timeout=30, retry_wait=10, late_min=40):
+def fetch_metars(icaos, url, hours=3, timeout=30, retry_wait=10, late_min=40,
+                 fallback_url=None, fallback_timeout=15):
     """Последните METAR/SPECI за списък летища → {icao: [parsed, …]} (най-новият първи).
 
     Втори опит (след retry_wait s, само за засегнатите летища), когато AWC не върне нищо
     или най-новият METAR е по-стар от late_min минути. METAR-ите са на 30 мин, така че
     при пускане в :12/:42 най-новият е на ~12 мин; по-стар отговор е непълен или
     кеширан. Вторият опит е с hours + 1 (различен URL → заобикаля кеширан отговор) и
-    със заглавия no-cache; взима се само ако е по-нов от първия."""
-    out = _fetch_once(icaos, url, hours, timeout)
+    със заглавия no-cache; взима се само ако е по-нов от първия.
+    Накрая — резерва от nowcasting-public (виж горе), ако е зададен fallback_url."""
+    try:
+        out = _fetch_once(icaos, url, hours, timeout)
+    except (requests.RequestException, ValueError) as e:
+        logger.warning(f"METAR AWC: {e} — празен отговор за всички летища")
+        out = {ic: [] for ic in icaos}
     now = dt.datetime.now(dt.timezone.utc)
 
     def newest(ic):
@@ -163,11 +174,64 @@ def fetch_metars(icaos, url, hours=3, timeout=30, retry_wait=10, late_min=40):
                 if new is not None and (old is None or new > old):
                     out[ic] = again[ic]
                     logger.info(f"METAR {ic}: повторната заявка даде по-нов ({new:%H:%MZ})")
-        except requests.RequestException as e:
+        except (requests.RequestException, ValueError) as e:
             logger.warning(f"повторна заявка за {', '.join(late)}: {e}")
+    late = [ic for ic in icaos
+            if newest(ic) is None or (now - newest(ic)).total_seconds() > late_min * 60]
+    if late and fallback_url:
+        _apply_fallback(out, late, fallback_url, hours, fallback_timeout, now)
     for ic in out:
         if not out[ic]:
             logger.warning(f"{ic}: няма METAR за последните {hours} ч")
+    return out
+
+
+def _newest_t(lst):
+    return lst[0]["time"] if lst and lst[0].get("time") else None
+
+
+def _apply_fallback(out, late, url, hours, timeout, now):
+    """Съобщенията от nowcasting-public за летищата в late — само ако са по-нови от AWC."""
+    try:
+        fb = fetch_fallback(late, url, hours, timeout, now)
+    except Exception as e:                     # мрежа, 404, лош JSON — продължаваме с AWC
+        logger.warning(f"METAR резерва nowcasting-public: {e}")
+        return
+    for ic in late:
+        old, new = _newest_t(out[ic]), _newest_t(fb.get(ic))
+        if new is None or (old is not None and new <= old):
+            logger.info(f"METAR {ic}: резервата не е по-нова ({new:%H:%MZ})" if new
+                        else f"METAR {ic}: няма и в резервата")
+            continue
+        seen = {p["time"] for p in out[ic] if p.get("time")}
+        merged = out[ic] + [p for p in fb[ic] if p["time"] not in seen]
+        merged.sort(key=lambda p: p["time"] or dt.datetime.min.replace(tzinfo=dt.timezone.utc), reverse=True)
+        out[ic] = merged
+        logger.info(f"METAR {ic}: резерва nowcasting-public ({new:%H:%MZ}"
+                    + (f", AWC {old:%H:%MZ})" if old else ", от AWC няма)"))
+
+
+def fetch_fallback(icaos, url, hours, timeout, now=None):
+    """nowcasting-public obs/metar_latest.json → {icao: [parsed, …]} (най-новият първи).
+    Само raw и time; ?t= заобикаля кеша на Pages (10 мин)."""
+    now = now or dt.datetime.now(dt.timezone.utc)
+    r = requests.get(url, params={"t": int(time.time())}, timeout=timeout,
+                     headers={"User-Agent": "airport-nowcast/0.1"})
+    r.raise_for_status()
+    reps = r.json()["reports"]
+    out = {ic: [] for ic in icaos}
+    for rec in reps:
+        ic, raw, ts = rec.get("id"), rec.get("raw"), rec.get("time")
+        if ic not in out or not raw or not ts:
+            continue
+        t = dt.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        if (now - t).total_seconds() > hours * 3600:
+            continue
+        p = parse_metar(raw.strip().rstrip("=").strip())
+        p["time"], p["src"] = t, "nowcasting-public"
+        out[ic].append(p)
+    for ic in out:
+        out[ic].sort(key=lambda p: p["time"], reverse=True)
     return out
 
 
@@ -191,6 +255,7 @@ def _fetch_once(icaos, url, hours, timeout, no_cache=False):
                      if isinstance(t, (int, float)) else None)
         if rec.get("metarType") in ("METAR", "SPECI"):
             p["type"] = rec["metarType"]
+        p["src"] = "awc"
         out[ic].append(p)
     for ic in out:
         out[ic].sort(key=lambda p: p["time"] or dt.datetime.min.replace(tzinfo=dt.timezone.utc),

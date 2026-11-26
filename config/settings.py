@@ -36,6 +36,9 @@ METAR = {
     "url": "https://aviationweather.gov/api/data/metar",
     "hours": 3,          # колко часа назад (последните 2–3 съобщения + SPECI)
     "stale_min": 60,     # METAR по-стар от това → само модели, с флаг
+    # Резерва (26.11.2026): когато AWC не върне нищо за летище или и вторият опит е по-стар от late_min
+    "fallback_url": "https://ilianrvd.github.io/nowcasting-public/obs/metar_latest.json",
+    "fallback_timeout": 15,
 }
 
 # ------------------------------------------------------------

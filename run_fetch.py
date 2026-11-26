@@ -47,7 +47,9 @@ def main():
     inputs = {"created": now.isoformat(), "errors": {}}
 
     try:
-        inputs["metar"] = fetch_metars(ICAO_LIST, METAR["url"], METAR["hours"])
+        inputs["metar"] = fetch_metars(ICAO_LIST, METAR["url"], METAR["hours"],
+                                       fallback_url=METAR.get("fallback_url"),
+                                       fallback_timeout=METAR.get("fallback_timeout", 15))
     except Exception as e:
         log.error(f"METAR: {e}")
         inputs["errors"]["metar"] = str(e)
