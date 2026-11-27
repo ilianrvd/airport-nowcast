@@ -120,10 +120,14 @@ def main():
 
     if not args.no_icon:
         try:
-            path, icon = fetch_icon(now, AIRPORTS, ICON_DWD, HORIZON_H, CACHE_DIR, ICON_CELLS_FILE)
+            deadline = time.monotonic() + ICON_DWD.get("budget_s", 360)
+            path, icon = fetch_icon(now, AIRPORTS, ICON_DWD, HORIZON_H, CACHE_DIR, ICON_CELLS_FILE,
+                                    deadline=deadline)
             inputs["icon"] = {"file": os.path.relpath(path, CACHE_DIR), "run": icon["run"],
                               "failed_files": icon.get("failed_files", 0),
-                              "cache_fallback": bool(icon.get("cache_fallback"))}
+                              "cache_fallback": bool(icon.get("cache_fallback")),
+                              "pending_steps": bool(icon.get("pending_steps")),
+                              "partial": bool(icon.get("partial"))}
         except Exception as e:
             log.error(f"ICON: {e}")
             inputs["errors"]["icon"] = str(e)
@@ -182,7 +186,11 @@ def summary(inputs, now):
               f"{' — СТАР, не се ползва' if fg.get('stale') else ''}; {fogs}")
     if "icon" in inputs:
         i = inputs["icon"]
-        print(f"\nICON-EU run {i['run'][:16]}, файл {i['file']}, неуспешни файлове: {i['failed_files']}")
+        flags = [t for k, t in (("cache_fallback", "предишен прогон от кеша"),
+                                ("pending_steps", "без новите стъпки"),
+                                ("partial", "частичен")) if i.get(k)]
+        print(f"\nICON-EU run {i['run'][:16]}, файл {i['file']}, неуспешни файлове: {i['failed_files']}"
+              + (f" ({', '.join(flags)})" if flags else ""))
     if "aladin" in inputs:
         a = inputs["aladin"]
         print(f"\nALADIN run {a['run'][:16]}, файл {a['file']}{' (нов)' if a['new'] else ''}")

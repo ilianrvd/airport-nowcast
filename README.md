@@ -33,6 +33,7 @@ python run_fetch.py
   резервен вграден cron на всеки 2 ч. Тегли данните, смята таблицата, публикува
   `output/` в Pages (без commit) и добавя архива в клона на месеца `archive-YYYY-MM`.
 - ICON точките се пазят между пусканията с `actions/cache`; нов прогон се тегли само при нужда.
+- Срок за ICON: 6 мин на пускане (`ICON_DWD["budget_s"]`). Ако DWD е бавен и новият прогон не се свали навреме, изтеглената част остава в `cache/icon/icon_YYYYMMDDHH.partial.json`, следващото пускане тегли само липсващите файлове, а дотогава таблицата ползва предишния пълен прогон от кеша (`meta.icon_fallback: true` в `table.json`). Неуспешен файл се пробва до 3 пъти.
 - Клонове `archive-YYYY-MM` (по един на месец; `archive-2026-11` започва от 29.10, старият клон `archive` е до 03.11):
   `YYYY/MM/DD/HHMM.json.gz` (входни; IFS и GFS с `run` — началото на прогона), `table_HHMM.json.gz`,
   `icon/icon_YYYYMMDDHH.json.gz`, `aladin/aladin_YYYYMMDDHH.json.gz`. Пускането клонира само текущия месец.

@@ -126,6 +126,7 @@ jobs:
           mkdir -p arch/icon
           for f in cache/icon/icon_*.json; do
             [ -f "$f" ] || continue
+            case "$f" in *.partial.json) continue;; esac   # недосвален прогон — архивира се, когато е пълен
             b=$(basename "$f").gz
             gzip -n -c "$f" > "arch/icon/$b"     # прогонът се допълва с нови стъпки → презаписва се
           done
