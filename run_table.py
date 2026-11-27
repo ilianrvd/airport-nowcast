@@ -61,6 +61,8 @@ def build(inp, icon, now, icaos):
            "icon_run": icon["run"] if icon else None,
            "meta": {
                "icon_run": icon["run"] if icon else None,
+               # true → новият ICON run не се свали навреме (или DWD го няма) и е ползван предишният от кеша
+               "icon_fallback": bool(inp.get("icon", {}).get("cache_fallback")),
                "ifs": bool(inp.get("ifs")), "gfs": bool(inp.get("gfs")),
                "aladin": bool(ala), "aladin_run": ala.get("run") if ala else None,
                "nowcast_radar": nc0.get("radar_time"), "nowcast_age_min": nc0.get("age_min"),
