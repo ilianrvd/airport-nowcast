@@ -44,7 +44,7 @@ def main():
     args = ap.parse_args()
 
     now = dt.datetime.now(dt.timezone.utc)
-    inputs = {"created": now.isoformat(), "errors": {}}
+    inputs = {"created": now.isoformat(), "code_version": os.environ.get("GITHUB_SHA"), "errors": {}}
 
     try:
         inputs["metar"] = fetch_metars(ICAO_LIST, METAR["url"], METAR["hours"],

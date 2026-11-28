@@ -58,6 +58,7 @@ def build(inp, icon, now, icaos):
     ala = load_aladin(inp)
     nc0, fg0 = inp.get("nowcast") or {}, inp.get("fog") or {}
     res = {"created": now.isoformat(), "inputs_created": inp.get("created"),
+           "code_version": os.environ.get("GITHUB_SHA"),   # commit на кода (null при локално пускане)
            "icon_run": icon["run"] if icon else None,
            "meta": {
                "icon_run": icon["run"] if icon else None,
