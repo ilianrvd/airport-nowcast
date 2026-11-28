@@ -2,7 +2,7 @@
 
 Публикува се в Pages: https://ilianrvd.github.io/airport-nowcast/table.json (и в архива като `table_HHMM.json.gz`).
 
-Тук са описани само полетата за METAR по летища (`airports.<ICAO>`). Пълното описание на `table.json` предстои.
+Тук са описани `code_version` и полетата за METAR по летища (`airports.<ICAO>`). Пълното описание на `table.json` предстои.
 
 Личен проект, не е официален продукт на сертифициран доставчик.
 
@@ -20,6 +20,7 @@
 
 | Поле | Описание |
 |---|---|
+| `code_version` (горно ниво) | Commit на кода в `ilianrvd/airport-nowcast`, с който е смятана таблицата (`GITHUB_SHA` на пускането). Същото поле има и във входните данни в архива (`YYYY/MM/DD/HHMM.json.gz`). `null` при локално пускане. Поле от 28.11.2026; в по-старите таблици липсва — тогава версията се търси по времето на пускането в историята на `main`. |
 | `metar_raw` | Суровият текст на METAR/SPECI, по който е смятана таблицата (най-новият за летището). `null`, ако няма METAR за последните 3 ч. |
 | `metar_source` | Откъде е този METAR: `"awc"` — пряко от Aviation Weather Center (`aviationweather.gov/api/data/metar`), основният път; `"nowcasting-public"` — резервата `obs/metar_latest.json` на nowcasting-public (виж по-долу). `null`, ако няма METAR. Поле от 26.11.2026; в по-старите таблици липсва (тогава всички са от AWC). |
 | `stale_metar` | `true`, ако METAR-ът е по-стар от 60 мин — тогава корекцията от METAR не се прилага. |
